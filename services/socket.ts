@@ -77,3 +77,16 @@ export function disconnect() {
   client?.deactivate();
   client = null;
 }
+
+export async function sendStartGame(roomId: string, playerId: string) {
+  const SERVER_HOST = '192.168.29.233'; // your Mac's IP
+  try {
+    await fetch(`http://${SERVER_HOST}:8080/api/rooms/${roomId}/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerId }),
+    });
+  } catch (e) {
+    console.error('Failed to start game', e);
+  }
+}
