@@ -1,6 +1,6 @@
 // components/Board.tsx — 11×11 game board with step-by-step token animation
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Dimensions } from 'react-native';
 import { BOARD, getGridPos, getSide, BoardSpace } from '../constants/board';
 import { Colors, CITY_PHOTOS } from '../constants/theme';
@@ -9,18 +9,18 @@ import { Player, Property } from '../store/gameStore';
 const { width: screenW } = Dimensions.get('window');
 const BOARD_SIZE = Math.min(screenW - 16, 720);
 const CORNER = BOARD_SIZE * 0.13;
-const SIDE = (BOARD_SIZE - CORNER * 2) / 9;
-const TOTAL_TILES = 40;
+const SIDE = (BOARD_SIZE - CORNER * 2) / 8; // 8 non-corner tiles per side
+const TOTAL_TILES = 36;
 
 interface Props {
   players: Player[];
   properties: Record<number, Property>;
   onTilePress: (space: BoardSpace) => void;
   onMoveComplete?: (playerId: string) => void;
+  rolling?: boolean;
 }
 
-export function Board({ players, properties, onTilePress, onMoveComplete }: Props) {
-  // Tracks what position each player's token is VISUALLY displayed at (may differ during animation)
+export function Board({ players, properties, onTilePress, onMoveComplete, rolling }: Props) {
   const [displayPositions, setDisplayPositions] = useState<Record<string, number>>(() => {
     const init: Record<string, number> = {};
     players.forEach(p => { init[p.id] = p.position; });
@@ -30,11 +30,42 @@ export function Board({ players, properties, onTilePress, onMoveComplete }: Prop
   const prevPositionsRef = useRef<Record<string, number>>({});
   const onMoveCompleteRef = useRef(onMoveComplete);
   const isMountedRef = useRef(true);
+  // Holds moves received while dice are still rolling; flushed when rolling stops
+  const pendingMovesRef = useRef<{ playerId: string; from: number; to: number }[]>([]);
 
   useEffect(() => { onMoveCompleteRef.current = onMoveComplete; }, [onMoveComplete]);
   useEffect(() => () => { isMountedRef.current = false; }, []);
 
-  // Track position changes and animate
+  const startAnimation = useCallback((playerId: string, from: number, to: number) => {
+    const forwardSteps = (to - from + TOTAL_TILES) % TOTAL_TILES;
+
+    if (forwardSteps === 0 || forwardSteps > 12) {
+      setDisplayPositions(dp => ({ ...dp, [playerId]: to }));
+      setTimeout(() => {
+        if (isMountedRef.current) onMoveCompleteRef.current?.(playerId);
+      }, 150);
+      return;
+    }
+
+    const steps: number[] = [];
+    let pos = from;
+    for (let i = 0; i < forwardSteps; i++) {
+      pos = (pos + 1) % TOTAL_TILES;
+      steps.push(pos);
+    }
+
+    let idx = 0;
+    const tick = () => {
+      if (!isMountedRef.current) return;
+      if (idx >= steps.length) { onMoveCompleteRef.current?.(playerId); return; }
+      setDisplayPositions(dp => ({ ...dp, [playerId]: steps[idx] }));
+      idx++;
+      setTimeout(tick, 550);
+    };
+    tick();
+  }, []);
+
+  // Record position changes; buffer them while dice are rolling
   const posKey = players.map(p => `${p.id}:${p.position}`).join(',');
   useEffect(() => {
     players.forEach(player => {
@@ -42,55 +73,37 @@ export function Board({ players, properties, onTilePress, onMoveComplete }: Prop
         prevPositionsRef.current[player.id] = player.position;
         return;
       }
-
       const prev = prevPositionsRef.current[player.id];
-
-      // First time seeing this player — just set position, no animation
       if (prev === undefined) {
         prevPositionsRef.current[player.id] = player.position;
         setDisplayPositions(dp => ({ ...dp, [player.id]: player.position }));
         return;
       }
-
-      if (prev === player.position) return; // No change
+      if (prev === player.position) return;
 
       prevPositionsRef.current[player.id] = player.position;
 
-      const from = prev;
-      const to = player.position;
-      const forwardSteps = (to - from + TOTAL_TILES) % TOTAL_TILES;
-
-      // Teleport (jail, chance card, etc.) — skip animation for > 12 steps
-      if (forwardSteps === 0 || forwardSteps > 12) {
-        setDisplayPositions(dp => ({ ...dp, [player.id]: to }));
-        setTimeout(() => {
-          if (isMountedRef.current) onMoveCompleteRef.current?.(player.id);
-        }, 150);
-        return;
+      if (rolling) {
+        // Dice still spinning — store the move, start it when rolling stops
+        pendingMovesRef.current = pendingMovesRef.current.filter(m => m.playerId !== player.id);
+        pendingMovesRef.current.push({ playerId: player.id, from: prev, to: player.position });
+      } else {
+        startAnimation(player.id, prev, player.position);
       }
-
-      // Step-by-step animation through each tile
-      const steps: number[] = [];
-      let pos = from;
-      for (let i = 0; i < forwardSteps; i++) {
-        pos = (pos + 1) % TOTAL_TILES;
-        steps.push(pos);
-      }
-
-      let idx = 0;
-      const tick = () => {
-        if (!isMountedRef.current) return;
-        if (idx >= steps.length) {
-          onMoveCompleteRef.current?.(player.id);
-          return;
-        }
-        setDisplayPositions(dp => ({ ...dp, [player.id]: steps[idx] }));
-        idx++;
-        setTimeout(tick, 350);
-      };
-      tick();
     });
-  }, [posKey]);
+  }, [posKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // When dice stop rolling, pause so player reads the result, then start pawn movement
+  useEffect(() => {
+    if (rolling) return;
+    const moves = [...pendingMovesRef.current];
+    if (moves.length === 0) return;
+    const t = setTimeout(() => {
+      pendingMovesRef.current = [];
+      moves.forEach(m => startAnimation(m.playerId, m.from, m.to));
+    }, 700); // 700ms pause: player sees the dice result before pawn moves
+    return () => clearTimeout(t);
+  }, [rolling, startAnimation]);
 
   return (
     <View style={[styles.boardOuter, { width: BOARD_SIZE + 12, height: BOARD_SIZE + 12 }]}>
@@ -307,7 +320,7 @@ function CenterPanel() {
   const rotate = rotateAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   return (
-    <View style={[styles.center, { left: CORNER, top: CORNER, width: SIDE * 9, height: SIDE * 9 }]}>
+    <View style={[styles.center, { left: CORNER, top: CORNER, width: SIDE * 8, height: SIDE * 8 }]}>
       <Animated.View style={[styles.spinRing, { transform: [{ rotate }] }]} />
       <Animated.View style={[styles.centerGlow, { opacity: glowAnim }]} />
 
@@ -341,8 +354,8 @@ function getIcon(space: BoardSpace): string {
 }
 
 function getPosition(row: number, col: number): { left: number; top: number } {
-  const left = col === 1 ? 0 : col === 11 ? BOARD_SIZE - CORNER : CORNER + (col - 2) * SIDE;
-  const top  = row === 1 ? 0 : row === 11 ? BOARD_SIZE - CORNER : CORNER + (row - 2) * SIDE;
+  const left = col === 1 ? 0 : col === 10 ? BOARD_SIZE - CORNER : CORNER + (col - 2) * SIDE;
+  const top  = row === 1 ? 0 : row === 10 ? BOARD_SIZE - CORNER : CORNER + (row - 2) * SIDE;
   return { left, top };
 }
 
@@ -428,13 +441,13 @@ const styles = StyleSheet.create({
   },
   spinRing: {
     position: 'absolute',
-    width: SIDE * 8, height: SIDE * 8, borderRadius: SIDE * 4,
+    width: SIDE * 7, height: SIDE * 7, borderRadius: SIDE * 3.5,
     borderWidth: 1, borderColor: 'rgba(245,158,11,0.12)',
     borderStyle: 'dashed',
   },
   centerGlow: {
     position: 'absolute',
-    width: SIDE * 5, height: SIDE * 5, borderRadius: SIDE * 2.5,
+    width: SIDE * 4.5, height: SIDE * 4.5, borderRadius: SIDE * 2.25,
     backgroundColor: Colors.gold,
     shadowColor: Colors.gold, shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 1, shadowRadius: SIDE * 2,

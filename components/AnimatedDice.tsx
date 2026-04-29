@@ -55,25 +55,29 @@ function Die({ value, rolling, delay }: { value: number; rolling: boolean; delay
       }, 75);
 
       Animated.parallel([
+        // Full two-spin over 1400ms, easing out so it decelerates naturally
         Animated.timing(rotation, {
           toValue: 1,
-          duration: 650,
+          duration: 1400,
           easing: Easing.out(Easing.cubic),
           delay,
           useNativeDriver: true,
         }),
+        // Pop up then settle back
         Animated.sequence([
-          Animated.timing(scale, { toValue: 1.4, duration: 220, delay, useNativeDriver: true }),
-          Animated.spring(scale, { toValue: 1, friction: 3, tension: 80, useNativeDriver: true }),
+          Animated.timing(scale, { toValue: 1.45, duration: 320, delay, useNativeDriver: true }),
+          Animated.spring(scale, { toValue: 1, friction: 4, tension: 60, useNativeDriver: true }),
         ]),
+        // Vigorous shake — 10 iterations across the full roll
         Animated.loop(
           Animated.sequence([
-            Animated.timing(shakeX, { toValue: 6, duration: 55, useNativeDriver: true }),
-            Animated.timing(shakeX, { toValue: -6, duration: 55, useNativeDriver: true }),
+            Animated.timing(shakeX, { toValue: 7, duration: 55, useNativeDriver: true }),
+            Animated.timing(shakeX, { toValue: -7, duration: 55, useNativeDriver: true }),
             Animated.timing(shakeX, { toValue: 0, duration: 55, useNativeDriver: true }),
           ]),
-          { iterations: 5 }
+          { iterations: 10 }
         ),
+        // Glow pulses while rolling
         Animated.loop(
           Animated.sequence([
             Animated.timing(glowAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
@@ -82,13 +86,14 @@ function Die({ value, rolling, delay }: { value: number; rolling: boolean; delay
         ),
       ]).start();
 
+      // Lock in final value after roll completes
       setTimeout(() => {
         if (intervalRef.current) clearInterval(intervalRef.current);
         setDisplayValue(value);
         rotation.setValue(0);
         glowAnim.setValue(0);
         shakeX.setValue(0);
-      }, 650 + delay);
+      }, 1400 + delay);
     } else {
       setDisplayValue(value);
       if (intervalRef.current) clearInterval(intervalRef.current);

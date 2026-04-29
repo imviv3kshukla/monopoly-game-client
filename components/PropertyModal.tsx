@@ -40,18 +40,34 @@ export function PropertyModal({
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.overlay} onPress={pendingBuy ? undefined : onClose}>
         <Pressable style={styles.modal}>
-          {/* Thick color band header */}
-          {colorBar ? (
-            <View style={[styles.colorBand, { backgroundColor: colorBar }]}>
-              <View style={styles.colorBandShine} />
-              {photo && <Text style={styles.bandEmoji}>{photo.emoji}</Text>}
-            </View>
-          ) : (
-            <View style={[styles.colorBand, styles.colorBandDefault]}>
-              <View style={styles.colorBandShine} />
-              <Text style={styles.bandEmoji}>{getDefaultEmoji(space)}</Text>
+          {/* Translucent city/landmark backdrop */}
+          {photo && (
+            <View style={styles.cityBackdrop} pointerEvents="none">
+              <Text style={styles.cityBackdropEmoji}>{photo.emoji}</Text>
             </View>
           )}
+          {colorBar && (
+            <View style={[styles.colorWash, { backgroundColor: colorBar }]} pointerEvents="none" />
+          )}
+          {/* Destination scene header */}
+          <View style={[styles.colorBand, { backgroundColor: colorBar || Colors.electric }]}>
+            {/* Bottom depth shadow */}
+            <View style={styles.colorBandDepth} />
+            {/* Top shine */}
+            <View style={styles.colorBandShine} />
+            {/* Ambient scene emoji — decorative corners */}
+            {photo?.scene[0] && <Text style={styles.sceneEmojiTL}>{photo.scene[0]}</Text>}
+            {photo?.scene[1] && <Text style={styles.sceneEmojiTR}>{photo.scene[1]}</Text>}
+            {photo?.scene[2] && <Text style={styles.sceneEmojiBR}>{photo.scene[2]}</Text>}
+            {/* Main landmark emoji — large and centred */}
+            <Text style={styles.bandEmoji}>{photo ? photo.emoji : getDefaultEmoji(space)}</Text>
+            {/* Landmark name tag at bottom */}
+            {photo && (
+              <View style={styles.landmarkTag}>
+                <Text style={styles.landmarkText}>{photo.landmark}</Text>
+              </View>
+            )}
+          </View>
 
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
             {/* Title */}
@@ -246,7 +262,7 @@ function DetailRow({ label, value, highlight, subtle }: {
 function getSubtitle(space: BoardSpace): string {
   switch (space.type) {
     case 'railroad': return 'Indian Railways';
-    case 'utility':  return space.id === 12 ? 'Power Distribution' : 'Water Supply';
+    case 'utility':  return space.id === 11 ? 'Power Distribution' : 'Water Supply';
     default:         return '';
   }
 }
@@ -257,7 +273,7 @@ function getDefaultEmoji(space: BoardSpace): string {
     case 'community': return '💌';
     case 'tax':       return '💸';
     case 'railroad':  return '🚂';
-    case 'utility':   return space.id === 12 ? '⚡' : '💧';
+    case 'utility':   return space.id === 11 ? '⚡' : '💧';
     case 'go':        return '🏁';
     case 'jail':      return '⛓️';
     case 'gotojail':  return '🚔';
@@ -282,16 +298,46 @@ const styles = StyleSheet.create({
   },
 
   colorBand: {
-    height: 72, width: '100%',
+    height: 148, width: '100%',
     alignItems: 'center', justifyContent: 'center',
     overflow: 'hidden', position: 'relative',
   },
-  colorBandDefault: { backgroundColor: Colors.electric },
-  colorBandShine: {
-    position: 'absolute', top: 0, left: 0, right: 0, height: '50%',
-    backgroundColor: 'rgba(255,255,255,0.15)',
+  colorBandDepth: {
+    position: 'absolute', bottom: 0, left: 0, right: 0, height: '45%',
+    backgroundColor: 'rgba(0,0,0,0.28)',
   },
-  bandEmoji: { fontSize: 40 },
+  colorBandShine: {
+    position: 'absolute', top: 0, left: 0, right: 0, height: '42%',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  bandEmoji: { fontSize: 80, zIndex: 1 },
+
+  // Ambient scene emoji — float in corners at low opacity
+  sceneEmojiTL: {
+    position: 'absolute', top: 10, left: 14,
+    fontSize: 32, opacity: 0.45,
+  },
+  sceneEmojiTR: {
+    position: 'absolute', top: 12, right: 18,
+    fontSize: 28, opacity: 0.38,
+  },
+  sceneEmojiBR: {
+    position: 'absolute', bottom: 28, right: 20,
+    fontSize: 26, opacity: 0.32,
+  },
+
+  // Landmark name pill at bottom of the band
+  landmarkTag: {
+    position: 'absolute', bottom: 10,
+    backgroundColor: 'rgba(0,0,0,0.38)',
+    paddingHorizontal: 12, paddingVertical: 4,
+    borderRadius: 20,
+  },
+  landmarkText: {
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: 11, fontWeight: '700', letterSpacing: 1.5,
+    textTransform: 'uppercase',
+  },
 
   content: { padding: 20, paddingBottom: 36, gap: 16 },
 
@@ -368,4 +414,25 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(248,113,113,0.3)',
   },
   warning: { color: Colors.danger, fontSize: 12, textAlign: 'center', fontWeight: '600' },
+
+  cityBackdrop: {
+    position: 'absolute',
+    bottom: 0, right: 0,
+    width: '100%', height: '100%',
+    alignItems: 'flex-end', justifyContent: 'flex-end',
+    overflow: 'hidden',
+    zIndex: 0,
+  },
+  cityBackdropEmoji: {
+    fontSize: 210,
+    opacity: 0.065,
+    marginBottom: -20,
+    marginRight: -30,
+  },
+  colorWash: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    opacity: 0.04,
+    zIndex: 0,
+  },
 });

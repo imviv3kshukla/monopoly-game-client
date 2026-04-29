@@ -61,7 +61,7 @@ export default function GameScreen() {
   // Stop dice rolling animation after server responds
   useEffect(() => {
     if (rolling) {
-      const t = setTimeout(() => setRolling(false), 850);
+      const t = setTimeout(() => setRolling(false), 1700); // matches 1400ms anim + 120ms die2 delay + buffer
       return () => clearTimeout(t);
     }
   }, [gameState?.lastDice]);
@@ -173,6 +173,7 @@ export default function GameScreen() {
           properties={gameState.properties}
           onTilePress={setSelectedSpace}
           onMoveComplete={handleMoveComplete}
+          rolling={rolling}
         />
 
         {/* ── Dice ── */}
