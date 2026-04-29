@@ -1,4 +1,4 @@
-// components/AnimatedDice.tsx — bouncy dice with rolling animation
+// components/AnimatedDice.tsx — bold bouncy dice with rolling shake animation
 
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
@@ -15,8 +15,15 @@ export function AnimatedDice({ values, rolling }: Props) {
   return (
     <View style={styles.row}>
       <Die value={values[0]} rolling={rolling} delay={0} />
-      <Die value={values[1]} rolling={rolling} delay={150} />
-      {!rolling && <Text style={styles.sumText}>= {values[0] + values[1]}</Text>}
+      <View style={styles.vsContainer}>
+        <Text style={styles.plusText}>+</Text>
+      </View>
+      <Die value={values[1]} rolling={rolling} delay={120} />
+      {!rolling && (
+        <View style={styles.sumBadge}>
+          <Text style={styles.sumText}>{values[0] + values[1]}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -24,54 +31,64 @@ export function AnimatedDice({ values, rolling }: Props) {
 function Die({ value, rolling, delay }: { value: number; rolling: boolean; delay: number }) {
   const rotation = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(1)).current;
+  const shakeX = useRef(new Animated.Value(0)).current;
+  const glowAnim = useRef(new Animated.Value(0)).current;
   const [displayValue, setDisplayValue] = useState(value);
-  const intervalRef = useRef<any>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (rolling) {
-      // Cycle through random faces while rolling
+      // Cycle through random faces
       intervalRef.current = setInterval(() => {
         setDisplayValue(Math.ceil(Math.random() * 6));
-      }, 80);
+      }, 75);
 
-      // Animate spin and bounce
+      // Spin + scale up
       Animated.parallel([
         Animated.sequence([
           Animated.timing(rotation, {
             toValue: 1,
-            duration: 600,
+            duration: 650,
             easing: Easing.out(Easing.cubic),
             delay,
             useNativeDriver: true,
           }),
         ]),
         Animated.sequence([
-          Animated.timing(scale, {
-            toValue: 1.3,
-            duration: 200,
-            delay,
-            useNativeDriver: true,
-          }),
-          Animated.spring(scale, {
-            toValue: 1,
-            friction: 3,
-            useNativeDriver: true,
-          }),
+          Animated.timing(scale, { toValue: 1.4, duration: 220, delay, useNativeDriver: true }),
+          Animated.spring(scale, { toValue: 1, friction: 3, tension: 80, useNativeDriver: true }),
         ]),
+        // Shake left-right
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(shakeX, { toValue: 6, duration: 55, useNativeDriver: true }),
+            Animated.timing(shakeX, { toValue: -6, duration: 55, useNativeDriver: true }),
+            Animated.timing(shakeX, { toValue: 0, duration: 55, useNativeDriver: true }),
+          ]),
+          { iterations: 5 }
+        ),
+        // Glow pulse while rolling
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(glowAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
+            Animated.timing(glowAnim, { toValue: 0.4, duration: 200, useNativeDriver: true }),
+          ])
+        ),
       ]).start();
 
-      // Stop spinning, show real value
       setTimeout(() => {
-        clearInterval(intervalRef.current);
+        if (intervalRef.current) clearInterval(intervalRef.current);
         setDisplayValue(value);
         rotation.setValue(0);
-      }, 600 + delay);
+        glowAnim.setValue(0);
+        shakeX.setValue(0);
+      }, 650 + delay);
     } else {
       setDisplayValue(value);
-      clearInterval(intervalRef.current);
+      if (intervalRef.current) clearInterval(intervalRef.current);
     }
 
-    return () => clearInterval(intervalRef.current);
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [rolling, value, delay]);
 
   const rotate = rotation.interpolate({
@@ -79,10 +96,23 @@ function Die({ value, rolling, delay }: { value: number; rolling: boolean; delay
     outputRange: ['0deg', '720deg'],
   });
 
+  const glowOpacity = glowAnim.interpolate({
+    inputRange: [0, 1], outputRange: [0, 0.7],
+  });
+
   return (
-    <Animated.View style={[styles.die, { transform: [{ rotate }, { scale }] }]}>
-      <Text style={styles.dieFace}>{FACES[displayValue - 1]}</Text>
-    </Animated.View>
+    <View style={styles.dieWrapper}>
+      {/* Glow behind the die */}
+      <Animated.View style={[styles.dieGlow, { opacity: glowOpacity }]} />
+      <Animated.View
+        style={[
+          styles.die,
+          { transform: [{ rotate }, { scale }, { translateX: shakeX }] },
+        ]}
+      >
+        <Text style={styles.dieFace}>{FACES[displayValue - 1]}</Text>
+      </Animated.View>
+    </View>
   );
 }
 
@@ -91,31 +121,71 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
+    gap: 8,
   },
-  die: {
-    width: 56,
-    height: 56,
-    backgroundColor: Colors.cream,
-    borderRadius: 12,
+
+  dieWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
+  },
+  dieGlow: {
+    position: 'absolute',
+    width: 88, height: 88,
+    borderRadius: 22,
+    backgroundColor: Colors.gold,
+    shadowColor: Colors.gold,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 20,
+    elevation: 0,
+  },
+  die: {
+    width: 76,
+    height: 76,
+    backgroundColor: Colors.cream,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
     borderColor: Colors.gold,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 10,
   },
   dieFace: {
-    fontSize: 36,
+    fontSize: 44,
     color: Colors.bgDark,
   },
+
+  vsContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 2,
+  },
+  plusText: {
+    color: Colors.textMuted,
+    fontSize: 20,
+    fontWeight: '300',
+  },
+
+  sumBadge: {
+    backgroundColor: Colors.electric,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginLeft: 4,
+    shadowColor: Colors.electric,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 10,
+    elevation: 6,
+  },
   sumText: {
-    color: Colors.goldLight,
-    fontSize: 22,
-    fontWeight: 'bold',
-    marginLeft: 6,
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: '900',
+    letterSpacing: 1,
   },
 });

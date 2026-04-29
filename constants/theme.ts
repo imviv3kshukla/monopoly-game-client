@@ -1,67 +1,80 @@
 // constants/theme.ts — central design tokens
 
 export const Colors = {
-  // Brand
-  bgDark: '#0a0612',
-  bgPanel: '#16102a',
-  bgPanelLight: '#1f1838',
-  gold: '#d4a017',
-  goldLight: '#f5d060',
-  goldPale: '#fce9b6',
-  cream: '#f8f2e4',
-  parchment: '#ede3cc',
+  // Backgrounds
+  bgDark: '#060415',
+  bgPanel: '#0e0b22',
+  bgPanelLight: '#1a1438',
+  bgGlass: 'rgba(255,255,255,0.06)',
+
+  // Gold brand
+  gold: '#f59e0b',
+  goldLight: '#fbbf24',
+  goldPale: '#fde68a',
+
+  // Vivid accents
+  electric: '#7c3aed',
+  electricLight: '#a78bfa',
+  cyan: '#22d3ee',
+  cyanLight: '#67e8f9',
+  pink: '#f472b6',
+  pinkDeep: '#ec4899',
+
+  // Board surfaces
+  cream: '#fefce8',
+  parchment: '#fef3c7',
 
   // Text
-  textPrimary: '#f8f2e4',
-  textSecondary: '#a89a7d',
-  textMuted: '#6b5d4a',
+  textPrimary: '#f0e6ff',
+  textSecondary: '#9d8ec0',
+  textMuted: '#5b4d7a',
 
   // Status
-  success: '#2ecc71',
-  danger: '#e74c3c',
-  warning: '#f39c12',
-  info: '#3498db',
+  success: '#4ade80',
+  danger: '#f87171',
+  warning: '#fbbf24',
+  info: '#38bdf8',
 
-  // Property colors
+  // Property group colors — more saturated
   prop: {
-    brown: '#8B4513',
-    lightblue: '#5dade2',
-    pink: '#e91e8c',
-    orange: '#e67e22',
-    red: '#e74c3c',
-    yellow: '#f1c40f',
-    green: '#27ae60',
-    darkblue: '#1565c0',
+    brown: '#b45309',
+    lightblue: '#0891b2',
+    pink: '#db2777',
+    orange: '#ea580c',
+    red: '#dc2626',
+    yellow: '#ca8a04',
+    green: '#16a34a',
+    darkblue: '#1d4ed8',
   },
 
-  // Player tokens
-  playerColors: ['#e74c3c', '#3498db', '#2ecc71', '#f39c12'],
+  // Player token colors — vivid
+  playerColors: ['#f87171', '#60a5fa', '#4ade80', '#fbbf24'],
 };
 
 export const PLAYER_TOKENS = ['🔴', '🔵', '🟢', '🟡'];
 
 // Photos for each city — using emoji + landmark icons
 export const CITY_PHOTOS: Record<string, { emoji: string; landmark: string }> = {
-  Pune:        { emoji: '🏛️', landmark: 'Shaniwar Wada' },
-  Bangalore:   { emoji: '🌆', landmark: 'Tech Capital' },
-  Chennai:     { emoji: '🌊', landmark: 'Marina Beach' },
-  Hyderabad:   { emoji: '🕌', landmark: 'Charminar' },
-  Kolkata:     { emoji: '🌉', landmark: 'Howrah Bridge' },
-  Ahmedabad:   { emoji: '🏯', landmark: 'Sabarmati' },
-  Jaipur:      { emoji: '🏰', landmark: 'Hawa Mahal' },
-  Lucknow:     { emoji: '🕌', landmark: 'Bara Imambara' },
-  Surat:       { emoji: '💎', landmark: 'Diamond City' },
-  Kanpur:      { emoji: '🏭', landmark: 'Industrial Hub' },
-  Nagpur:      { emoji: '🍊', landmark: 'Orange City' },
+  Pune:         { emoji: '🏛️', landmark: 'Shaniwar Wada' },
+  Bangalore:    { emoji: '🌆', landmark: 'Tech Capital' },
+  Chennai:      { emoji: '🌊', landmark: 'Marina Beach' },
+  Hyderabad:    { emoji: '🕌', landmark: 'Charminar' },
+  Kolkata:      { emoji: '🌉', landmark: 'Howrah Bridge' },
+  Ahmedabad:    { emoji: '🏯', landmark: 'Sabarmati' },
+  Jaipur:       { emoji: '🏰', landmark: 'Hawa Mahal' },
+  Lucknow:      { emoji: '🕌', landmark: 'Bara Imambara' },
+  Surat:        { emoji: '💎', landmark: 'Diamond City' },
+  Kanpur:       { emoji: '🏭', landmark: 'Industrial Hub' },
+  Nagpur:       { emoji: '🍊', landmark: 'Orange City' },
   'Mumbai (W)': { emoji: '🌅', landmark: 'Marine Drive' },
   'Mumbai (C)': { emoji: '🚉', landmark: 'CST Station' },
   'Mumbai (E)': { emoji: '🏙️', landmark: 'Bandra' },
-  'Delhi (N)': { emoji: '🏛️', landmark: 'Red Fort' },
-  'Delhi (S)': { emoji: '🏯', landmark: 'Qutub Minar' },
-  'Delhi (E)': { emoji: '🚪', landmark: 'India Gate' },
-  Mysore:      { emoji: '🏯', landmark: 'Mysore Palace' },
-  Bhopal:      { emoji: '🌊', landmark: 'Upper Lake' },
-  Indore:      { emoji: '🏛️', landmark: 'Rajwada' },
-  Shimla:      { emoji: '⛰️', landmark: 'The Mall' },
-  Manali:      { emoji: '🏔️', landmark: 'Solang Valley' },
+  'Delhi (N)':  { emoji: '🏛️', landmark: 'Red Fort' },
+  'Delhi (S)':  { emoji: '🏯', landmark: 'Qutub Minar' },
+  'Delhi (E)':  { emoji: '🚪', landmark: 'India Gate' },
+  Mysore:       { emoji: '🏯', landmark: 'Mysore Palace' },
+  Bhopal:       { emoji: '🌊', landmark: 'Upper Lake' },
+  Indore:       { emoji: '🏛️', landmark: 'Rajwada' },
+  Shimla:       { emoji: '⛰️', landmark: 'The Mall' },
+  Manali:       { emoji: '🏔️', landmark: 'Solang Valley' },
 };
