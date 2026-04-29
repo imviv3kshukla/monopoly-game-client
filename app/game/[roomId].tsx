@@ -1,6 +1,6 @@
 // app/game/[roomId].tsx — Main game screen
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Animated, Modal,
@@ -26,17 +26,28 @@ export default function GameScreen() {
   const [rolling, setRolling] = useState(false);
   const [showLog, setShowLog] = useState(false);
   const [showCardModal, setShowCardModal] = useState<string | null>(null);
+  // Track whether the local player has already rolled this turn
+  const [hasRolledThisTurn, setHasRolledThisTurn] = useState(false);
 
   const me = myPlayer();
   const myTurn = isMyTurn();
   const current = currentPlayer();
 
-  useEffect(() => {
-    if (gameState?.pendingAction === 'BUY' && myTurn && me) {
-      setSelectedSpace(BOARD[me.position]);
-    }
-  }, [gameState?.pendingAction]);
+  // Timer ref for auto-end-turn
+  const autoEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Clear auto-end timer on unmount
+  useEffect(() => () => {
+    if (autoEndTimer.current) clearTimeout(autoEndTimer.current);
+  }, []);
+
+  // Reset roll state when turn changes (new player's turn begins)
+  useEffect(() => {
+    setHasRolledThisTurn(false);
+    if (autoEndTimer.current) { clearTimeout(autoEndTimer.current); autoEndTimer.current = null; }
+  }, [gameState?.currentPlayerIndex]);
+
+  // Show chance/community card popup immediately from log
   useEffect(() => {
     if (gameState?.log[0]) {
       const latest = gameState.log[0];
@@ -47,12 +58,37 @@ export default function GameScreen() {
     }
   }, [gameState?.log[0]]);
 
+  // Stop dice rolling animation after server responds
   useEffect(() => {
     if (rolling) {
       const t = setTimeout(() => setRolling(false), 850);
       return () => clearTimeout(t);
     }
   }, [gameState?.lastDice]);
+
+  // ── scheduleAutoEnd: clears any existing timer, starts a 2.5s countdown to sendEndTurn
+  const scheduleAutoEnd = useCallback(() => {
+    if (autoEndTimer.current) clearTimeout(autoEndTimer.current);
+    autoEndTimer.current = setTimeout(() => {
+      // Read fresh state from Zustand to avoid stale closures
+      const { gameState: gs, myPlayerId: pid, isMyTurn: checkMyTurn } = useGameStore.getState();
+      if (!checkMyTurn() || !gs || gs.pendingAction !== null) return;
+      sendEndTurn(roomId!, pid!);
+      autoEndTimer.current = null;
+    }, 2500);
+  }, [roomId]);
+
+  // ── After dice animation stops, start auto-end countdown (covers no-movement cases like jail)
+  useEffect(() => {
+    if (rolling || !hasRolledThisTurn || !myTurn) return;
+    scheduleAutoEnd();
+  }, [rolling]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Also reschedule when pendingAction clears (e.g. CARD resolved) during my turn
+  useEffect(() => {
+    if (!myTurn || !hasRolledThisTurn || gameState?.pendingAction !== null) return;
+    scheduleAutoEnd();
+  }, [gameState?.pendingAction]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!gameState) return <LoadingScreen />;
 
@@ -64,7 +100,30 @@ export default function GameScreen() {
     : false;
   const showBuyButtons = gameState.pendingAction === 'BUY' && myTurn && selectedSpace?.id === me?.position;
 
-  const handleRoll = () => { setRolling(true); sendRoll(roomId!, myPlayerId!); };
+  const handleRoll = () => {
+    setRolling(true);
+    setHasRolledThisTurn(true);
+    sendRoll(roomId!, myPlayerId!);
+  };
+
+  // ── Called by Board when a player's step animation finishes at their final tile
+  const handleMoveComplete = useCallback((playerId: string) => {
+    if (playerId !== myPlayerId) return;
+
+    // Read fresh state — avoids stale closure issues with async animations
+    const { gameState: gs, myPlayerId: pid, isMyTurn: checkMyTurn } = useGameStore.getState();
+    if (!checkMyTurn() || !gs) return;
+
+    if (gs.pendingAction === 'BUY') {
+      // Cancel auto-end, let player decide to buy or skip
+      if (autoEndTimer.current) { clearTimeout(autoEndTimer.current); autoEndTimer.current = null; }
+      const mePlayer = gs.players.find(p => p.id === pid);
+      if (mePlayer) setSelectedSpace(BOARD[mePlayer.position]);
+    } else {
+      // Re-start the auto-end timer from the end of animation (gives 2.5s to view result)
+      scheduleAutoEnd();
+    }
+  }, [myPlayerId, scheduleAutoEnd]);
 
   if (gameState.status === 'WAITING') {
     return <WaitingRoom roomId={roomId!} state={gameState} myPlayerId={myPlayerId!} />;
@@ -90,11 +149,7 @@ export default function GameScreen() {
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* ── Players ── */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.playersRow}
-        >
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.playersRow}>
           {gameState.players.map((p, i) => {
             const propCount = Object.values(gameState.properties).filter(pr => pr.ownerId === p.id).length;
             return (
@@ -110,13 +165,14 @@ export default function GameScreen() {
         </ScrollView>
 
         {/* ── Turn Banner ── */}
-        <TurnBanner isMyTurn={myTurn} current={current} />
+        <TurnBanner isMyTurn={myTurn} hasRolled={hasRolledThisTurn} current={current} />
 
         {/* ── Board ── */}
         <Board
           players={gameState.players}
           properties={gameState.properties}
           onTilePress={setSelectedSpace}
+          onMoveComplete={handleMoveComplete}
         />
 
         {/* ── Dice ── */}
@@ -124,27 +180,34 @@ export default function GameScreen() {
           <AnimatedDice values={gameState.lastDice} rolling={rolling} />
         </View>
 
-        {/* ── Action Buttons ── */}
-        {myTurn && !me?.bankrupt && (
+        {/* ── Action Buttons ── (only shown before rolling) ── */}
+        {myTurn && !me?.bankrupt && !hasRolledThisTurn && (
           <View style={styles.controls}>
             {gameState.pendingAction === null && (
               <ActionButton label="🎲  ROLL DICE" variant="gold" onPress={handleRoll} disabled={rolling} />
             )}
             {me?.inJail && gameState.pendingAction === null && (
-              <ActionButton label="⛓️  Pay ₹500 Bail" variant="danger" onPress={() => sendPayJail(roomId!, myPlayerId!)} />
+              <ActionButton
+                label="⛓️  Pay ₹500 Bail"
+                variant="danger"
+                onPress={() => sendPayJail(roomId!, myPlayerId!)}
+              />
             )}
-            {gameState.pendingAction === null && (
-              <ActionButton label="End Turn  →" variant="purple" onPress={() => sendEndTurn(roomId!, myPlayerId!)} />
-            )}
+            {/* No End Turn button — turn ends automatically after roll + animation */}
+          </View>
+        )}
+
+        {/* ── Auto-end hint (after rolling) ── */}
+        {myTurn && hasRolledThisTurn && !rolling && gameState.pendingAction === null && !selectedSpace && (
+          <View style={styles.autoEndHint}>
+            <Text style={styles.autoEndHintText}>⏱  Turn ending automatically...</Text>
           </View>
         )}
 
         {/* ── Log ── */}
         <TouchableOpacity onPress={() => setShowLog(!showLog)} style={styles.logToggle} activeOpacity={0.8}>
           <View style={styles.logDot} />
-          <Text style={styles.latestLog} numberOfLines={1}>
-            {gameState.log[0] || 'Game started!'}
-          </Text>
+          <Text style={styles.latestLog} numberOfLines={1}>{gameState.log[0] || 'Game started!'}</Text>
           <Text style={styles.logChevron}>{showLog ? '▼' : '▲'}</Text>
         </TouchableOpacity>
 
@@ -153,15 +216,14 @@ export default function GameScreen() {
             {gameState.log.slice(0, 15).map((line, i) => (
               <View key={i} style={styles.logLineRow}>
                 <View style={[styles.logBullet, i === 0 && styles.logBulletActive]} />
-                <Text style={[styles.logLine, i === 0 && styles.logLineLatest]} numberOfLines={2}>
-                  {line}
-                </Text>
+                <Text style={[styles.logLine, i === 0 && styles.logLineLatest]} numberOfLines={2}>{line}</Text>
               </View>
             ))}
           </View>
         )}
       </ScrollView>
 
+      {/* ── Property Modal ── */}
       <PropertyModal
         visible={selectedSpace !== null}
         space={selectedSpace}
@@ -172,14 +234,27 @@ export default function GameScreen() {
         isOwnerMe={isOwnerMe}
         ownsColorSet={ownsColorSet}
         pendingBuy={!!showBuyButtons}
-        onBuy={() => { sendBuy(roomId!, myPlayerId!); setSelectedSpace(null); }}
-        onSkipBuy={() => { sendSkipBuy(roomId!, myPlayerId!); setSelectedSpace(null); }}
+        onBuy={() => {
+          if (autoEndTimer.current) { clearTimeout(autoEndTimer.current); autoEndTimer.current = null; }
+          sendBuy(roomId!, myPlayerId!);
+          setSelectedSpace(null);
+          // Auto-end after buy — give server 700ms to process then end turn
+          autoEndTimer.current = setTimeout(() => sendEndTurn(roomId!, myPlayerId!), 700);
+        }}
+        onSkipBuy={() => {
+          if (autoEndTimer.current) { clearTimeout(autoEndTimer.current); autoEndTimer.current = null; }
+          sendSkipBuy(roomId!, myPlayerId!);
+          setSelectedSpace(null);
+          autoEndTimer.current = setTimeout(() => sendEndTurn(roomId!, myPlayerId!), 700);
+        }}
         onBuild={(id) => { sendBuildHouse(roomId!, myPlayerId!, id); setSelectedSpace(null); }}
         onClose={() => setSelectedSpace(null)}
       />
 
-      <CardDrawnModal text={showCardModal} onClose={() => setShowCardModal(null)} />
+      {/* ── Card Drawn Modal ── */}
+      <CardDrawnModal text={showCardModal} />
 
+      {/* ── Game Over ── */}
       {gameState.status === 'FINISHED' && (
         <GameOverModal winner={gameState.players.find(p => p.id === gameState.winnerId)} />
       )}
@@ -187,30 +262,27 @@ export default function GameScreen() {
   );
 }
 
-// ─── Turn Banner ─────────────────────────────────────────────────────────────
+// ─── Turn Banner ──────────────────────────────────────────────────────────────
 
-function TurnBanner({ isMyTurn, current }: { isMyTurn: boolean; current: any }) {
+function TurnBanner({ isMyTurn, hasRolled, current }: {
+  isMyTurn: boolean; hasRolled: boolean; current: any;
+}) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const shimmer = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (isMyTurn) {
+    if (isMyTurn && !hasRolled) {
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 1.02, duration: 700, useNativeDriver: true }),
           Animated.timing(pulseAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
         ])
       ).start();
-      Animated.loop(
-        Animated.timing(shimmer, { toValue: 1, duration: 1800, useNativeDriver: true })
-      ).start();
     } else {
       pulseAnim.setValue(1);
-      shimmer.setValue(0);
     }
-  }, [isMyTurn]);
+  }, [isMyTurn, hasRolled]);
 
-  if (isMyTurn) {
+  if (isMyTurn && !hasRolled) {
     return (
       <Animated.View style={[styles.turnBannerMine, { transform: [{ scale: pulseAnim }] }]}>
         <View style={styles.turnBannerShimmer} pointerEvents="none" />
@@ -218,6 +290,14 @@ function TurnBanner({ isMyTurn, current }: { isMyTurn: boolean; current: any }) 
         <Text style={styles.turnBannerTextMine}>YOUR TURN!</Text>
         <Text style={styles.turnBannerStar}>✨</Text>
       </Animated.View>
+    );
+  }
+
+  if (isMyTurn && hasRolled) {
+    return (
+      <View style={styles.turnBannerRolled}>
+        <Text style={styles.turnBannerTextRolled}>🎲  Dice rolled — moving...</Text>
+      </View>
     );
   }
 
@@ -230,7 +310,7 @@ function TurnBanner({ isMyTurn, current }: { isMyTurn: boolean; current: any }) 
   );
 }
 
-// ─── Sub-components ──────────────────────────────────────────────────────────
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
 function LoadingScreen() {
   const pulse = useRef(new Animated.Value(0.6)).current;
@@ -268,18 +348,15 @@ function WaitingRoom({ roomId, state, myPlayerId }: any) {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <Stack.Screen options={{ headerShown: false }} />
       <ScrollView contentContainerStyle={styles.waitingScroll} showsVerticalScrollIndicator={false}>
-
         <Text style={styles.waitingEyebrow}>WAITING ROOM</Text>
         <Text style={styles.waitingTitle}>BUSINESS</Text>
 
-        {/* Room code box */}
         <View style={styles.codeBox}>
           <Text style={styles.codeBoxLabel}>SHARE THIS CODE</Text>
           <Text style={styles.codeBoxCode}>{roomId}</Text>
           <Text style={styles.codeBoxHint}>Friends can join with this code</Text>
         </View>
 
-        {/* Player slots */}
         <Text style={styles.waitingPlayersHeader}>PLAYERS ({state.players.length}/4)</Text>
         <View style={styles.waitingPlayers}>
           {state.players.map((p: any, i: number) => (
@@ -287,9 +364,7 @@ function WaitingRoom({ roomId, state, myPlayerId }: any) {
               <View style={[styles.waitingPlayerColorDot, { backgroundColor: p.color }]} />
               <Text style={styles.waitingPlayerToken}>{p.token}</Text>
               <Text style={[styles.waitingPlayerName, { color: p.color }]}>
-                {p.name}
-                {p.id === myPlayerId && '  (You)'}
-                {i === 0 && '  👑'}
+                {p.name}{p.id === myPlayerId && '  (You)'}{i === 0 && '  👑'}
               </Text>
               <View style={[styles.readyBadge, { backgroundColor: p.color + '25' }]}>
                 <Text style={[styles.readyText, { color: p.color }]}>READY</Text>
@@ -317,9 +392,7 @@ function WaitingRoom({ roomId, state, myPlayerId }: any) {
           </TouchableOpacity>
         ) : (
           <View style={styles.waitingHintBox}>
-            <Text style={styles.waitingHint}>
-              ⏳  Waiting for {state.players[0]?.name} to start...
-            </Text>
+            <Text style={styles.waitingHint}>⏳  Waiting for {state.players[0]?.name} to start...</Text>
           </View>
         )}
       </ScrollView>
@@ -331,22 +404,17 @@ function ActionButton({ label, variant, onPress, disabled }: {
   label: string; variant: 'gold' | 'purple' | 'danger'; onPress: () => void; disabled?: boolean;
 }) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
-
-  const onPressIn = () => Animated.spring(scaleAnim, { toValue: 0.96, useNativeDriver: true }).start();
-  const onPressOut = () => Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true }).start();
-
-  const bgMap = { gold: Colors.gold, purple: Colors.electric, danger: '#ef4444' };
+  const onPressIn  = () => Animated.spring(scaleAnim, { toValue: 0.96, useNativeDriver: true }).start();
+  const onPressOut = () => Animated.spring(scaleAnim, { toValue: 1,    useNativeDriver: true }).start();
+  const bgMap   = { gold: Colors.gold, purple: Colors.electric, danger: '#ef4444' };
   const textMap = { gold: Colors.bgDark, purple: '#fff', danger: '#fff' };
 
   return (
     <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
       <TouchableOpacity
         style={[styles.actionBtn, { backgroundColor: bgMap[variant] }, disabled && styles.actionBtnDisabled]}
-        onPress={onPress}
-        onPressIn={onPressIn}
-        onPressOut={onPressOut}
-        disabled={disabled}
-        activeOpacity={1}
+        onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut}
+        disabled={disabled} activeOpacity={1}
       >
         <View style={styles.btnShine} />
         <Text style={[styles.actionBtnText, { color: textMap[variant] }]}>{label}</Text>
@@ -355,7 +423,7 @@ function ActionButton({ label, variant, onPress, disabled }: {
   );
 }
 
-function CardDrawnModal({ text, onClose }: { text: string | null; onClose: () => void }) {
+function CardDrawnModal({ text }: { text: string | null }) {
   if (!text) return null;
   const isChance = text.startsWith('Chance:');
   const cleanText = text.replace(/^(Chance|Community):\s*/, '');
@@ -405,15 +473,10 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bgDark },
   scroll: { paddingHorizontal: 12, paddingBottom: 50, gap: 14 },
 
-  // Loading
-  loadingContainer: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.bgDark, gap: 14,
-  },
+  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bgDark, gap: 14 },
   loadingTitle: { color: Colors.goldLight, fontSize: 40, fontWeight: '900', letterSpacing: 8 },
   loadingText: { color: Colors.textSecondary, fontSize: 14 },
 
-  // Top bar
   topBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 14, paddingVertical: 12,
@@ -431,17 +494,14 @@ const styles = StyleSheet.create({
   roomBadgeLabel: { color: Colors.textMuted, fontSize: 9, letterSpacing: 3, fontWeight: '700' },
   roomBadgeCode: { color: Colors.goldLight, fontSize: 18, fontWeight: '900', letterSpacing: 4 },
 
-  // Players row
   playersRow: { paddingHorizontal: 2, paddingVertical: 6, gap: 10 },
 
-  // Turn banner
+  // Turn banners
   turnBannerMine: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.success,
-    borderRadius: 14, paddingVertical: 14, gap: 10,
-    overflow: 'hidden',
-    shadowColor: Colors.success,
-    shadowOffset: { width: 0, height: 0 },
+    backgroundColor: Colors.success, borderRadius: 14,
+    paddingVertical: 14, gap: 10, overflow: 'hidden',
+    shadowColor: Colors.success, shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.6, shadowRadius: 16, elevation: 8,
   },
   turnBannerShimmer: {
@@ -449,27 +509,27 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.2)',
   },
   turnBannerStar: { fontSize: 20 },
-  turnBannerTextMine: {
-    color: Colors.bgDark, fontSize: 18, fontWeight: '900', letterSpacing: 2,
+  turnBannerTextMine: { color: Colors.bgDark, fontSize: 18, fontWeight: '900', letterSpacing: 2 },
+  turnBannerRolled: {
+    backgroundColor: 'rgba(245,158,11,0.15)',
+    borderRadius: 14, paddingVertical: 12,
+    alignItems: 'center', borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)',
   },
+  turnBannerTextRolled: { color: Colors.gold, fontSize: 14, fontWeight: '700' },
   turnBannerWait: {
     backgroundColor: 'rgba(124,58,237,0.15)',
     borderRadius: 14, paddingVertical: 12,
-    alignItems: 'center',
-    borderWidth: 1, borderColor: 'rgba(124,58,237,0.3)',
+    alignItems: 'center', borderWidth: 1, borderColor: 'rgba(124,58,237,0.3)',
   },
-  turnBannerTextWait: { color: Colors.electricLight, fontSize: 14, fontWeight: '600', letterSpacing: 0.5 },
+  turnBannerTextWait: { color: Colors.electricLight, fontSize: 14, fontWeight: '600' },
 
-  // Dice section
   diceSection: { alignItems: 'center', paddingVertical: 12 },
 
-  // Controls
   controls: { gap: 10 },
   actionBtn: {
     borderRadius: 14, paddingVertical: 18, alignItems: 'center',
     overflow: 'hidden', position: 'relative',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.45, shadowRadius: 12, elevation: 7,
+    shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.45, shadowRadius: 12, elevation: 7,
   },
   actionBtnDisabled: { opacity: 0.45 },
   actionBtnText: { fontSize: 16, fontWeight: '800', letterSpacing: 1.5 },
@@ -478,21 +538,23 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.18)',
   },
 
-  // Log
+  autoEndHint: {
+    alignItems: 'center', paddingVertical: 10,
+    backgroundColor: 'rgba(90,77,122,0.3)',
+    borderRadius: 10, borderWidth: 1, borderColor: 'rgba(124,58,237,0.2)',
+  },
+  autoEndHintText: { color: Colors.textSecondary, fontSize: 13, fontStyle: 'italic' },
+
   logToggle: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: Colors.bgPanel, padding: 14, borderRadius: 12,
     gap: 10, borderWidth: 1, borderColor: 'rgba(245,158,11,0.15)',
   },
-  logDot: {
-    width: 8, height: 8, borderRadius: 4,
-    backgroundColor: Colors.gold,
-  },
+  logDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.gold },
   latestLog: { flex: 1, color: Colors.goldPale, fontSize: 13 },
   logChevron: { color: Colors.gold, fontSize: 13, fontWeight: '700' },
   logPanel: {
-    backgroundColor: Colors.bgPanel, padding: 14,
-    borderRadius: 12, gap: 8,
+    backgroundColor: Colors.bgPanel, padding: 14, borderRadius: 12, gap: 8,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
   },
   logLineRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
@@ -502,10 +564,7 @@ const styles = StyleSheet.create({
   logLineLatest: { color: Colors.goldLight, fontWeight: '700' },
 
   // Waiting room
-  waitingScroll: {
-    flexGrow: 1, padding: 22, alignItems: 'center',
-    justifyContent: 'center', gap: 18, paddingVertical: 44,
-  },
+  waitingScroll: { flexGrow: 1, padding: 22, alignItems: 'center', justifyContent: 'center', gap: 18, paddingVertical: 44 },
   waitingEyebrow: { color: Colors.gold, fontSize: 11, letterSpacing: 5, fontWeight: '700' },
   waitingTitle: {
     color: Colors.goldLight, fontSize: 44, fontWeight: '900', letterSpacing: 8,
@@ -515,23 +574,16 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.bgPanel, borderRadius: 16, padding: 22,
     alignItems: 'center', borderWidth: 2, borderColor: Colors.gold,
     gap: 6, width: '100%', maxWidth: 340,
-    shadowColor: Colors.gold, shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.25, shadowRadius: 20, elevation: 8,
+    shadowColor: Colors.gold, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.25, shadowRadius: 20, elevation: 8,
   },
   codeBoxLabel: { color: Colors.textMuted, fontSize: 10, letterSpacing: 3, fontWeight: '700' },
   codeBoxCode: { color: Colors.goldLight, fontSize: 40, fontWeight: '900', letterSpacing: 8 },
   codeBoxHint: { color: Colors.textSecondary, fontSize: 12, fontStyle: 'italic' },
-
-  waitingPlayersHeader: {
-    color: Colors.gold, fontSize: 12, letterSpacing: 3,
-    fontWeight: '800', marginTop: 4,
-  },
+  waitingPlayersHeader: { color: Colors.gold, fontSize: 12, letterSpacing: 3, fontWeight: '800', marginTop: 4 },
   waitingPlayers: { gap: 10, width: '100%', maxWidth: 380 },
   waitingPlayer: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.bgPanel,
-    borderRadius: 14, padding: 14, gap: 12,
-    borderWidth: 1.5,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.bgPanel,
+    borderRadius: 14, padding: 14, gap: 12, borderWidth: 1.5,
   },
   waitingPlayerColorDot: { width: 10, height: 10, borderRadius: 5 },
   waitingPlayerToken: { fontSize: 26 },
@@ -539,50 +591,34 @@ const styles = StyleSheet.create({
   readyBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   readyText: { fontSize: 10, fontWeight: '800', letterSpacing: 1 },
   waitingPlayerEmpty: {
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.08)',
-    borderStyle: 'dashed', borderRadius: 14,
-    padding: 16, alignItems: 'center',
+    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.08)', borderStyle: 'dashed',
+    borderRadius: 14, padding: 16, alignItems: 'center',
   },
   waitingEmptyText: { color: Colors.textMuted, fontStyle: 'italic', fontSize: 13 },
-
   startBtn: {
-    backgroundColor: Colors.gold, borderRadius: 14,
-    paddingVertical: 18, paddingHorizontal: 40,
+    backgroundColor: Colors.gold, borderRadius: 14, paddingVertical: 18,
     alignItems: 'center', overflow: 'hidden', position: 'relative',
     width: '100%', maxWidth: 380, marginTop: 8,
-    shadowColor: Colors.gold, shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.5, shadowRadius: 14, elevation: 8,
+    shadowColor: Colors.gold, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.5, shadowRadius: 14, elevation: 8,
   },
   startBtnDisabled: { opacity: 0.5 },
   startBtnText: { color: Colors.bgDark, fontWeight: '800', fontSize: 16, letterSpacing: 2 },
-
   waitingHintBox: {
-    backgroundColor: 'rgba(124,58,237,0.12)',
-    borderRadius: 12, padding: 14, marginTop: 8,
+    backgroundColor: 'rgba(124,58,237,0.12)', borderRadius: 12, padding: 14, marginTop: 8,
     borderWidth: 1, borderColor: 'rgba(124,58,237,0.3)',
   },
   waitingHint: { color: Colors.electricLight, fontStyle: 'italic', fontSize: 14, textAlign: 'center' },
 
-  // Card drawn modal
-  cardModalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.88)',
-    alignItems: 'center', justifyContent: 'center', padding: 20,
-  },
+  // Card modal
+  cardModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.88)', alignItems: 'center', justifyContent: 'center', padding: 20 },
   cardModal: {
-    borderRadius: 20, padding: 30, alignItems: 'center',
-    maxWidth: 380, width: '90%',
-    backgroundColor: '#fffbeb',
-    borderWidth: 3,
+    borderRadius: 20, padding: 30, alignItems: 'center', maxWidth: 380, width: '90%',
+    backgroundColor: '#fffbeb', borderWidth: 3,
   },
   cardModalIcon: { fontSize: 54 },
-  cardModalTitle: {
-    fontSize: 18, fontWeight: '900', letterSpacing: 3, marginTop: 10,
-  },
+  cardModalTitle: { fontSize: 18, fontWeight: '900', letterSpacing: 3, marginTop: 10 },
   cardModalDivider: { width: 70, height: 3, marginVertical: 14, borderRadius: 2 },
-  cardModalText: {
-    fontSize: 16, color: '#1c1917', textAlign: 'center',
-    lineHeight: 26, fontWeight: '500',
-  },
+  cardModalText: { fontSize: 16, color: '#1c1917', textAlign: 'center', lineHeight: 26, fontWeight: '500' },
 
   // Game over
   gameOverOverlay: {
@@ -599,11 +635,9 @@ const styles = StyleSheet.create({
   gameOverSub: { color: Colors.gold, fontSize: 16, letterSpacing: 3, fontWeight: '700' },
   gameOverMoney: { color: Colors.success, fontSize: 22, fontWeight: '800', marginTop: 4 },
   gameOverBtn: {
-    backgroundColor: Colors.gold, borderRadius: 14,
-    paddingVertical: 15, paddingHorizontal: 40, marginTop: 24,
+    backgroundColor: Colors.gold, borderRadius: 14, paddingVertical: 15, paddingHorizontal: 40, marginTop: 24,
     overflow: 'hidden', position: 'relative',
-    shadowColor: Colors.gold, shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.5, shadowRadius: 14, elevation: 8,
+    shadowColor: Colors.gold, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.5, shadowRadius: 14, elevation: 8,
   },
   gameOverBtnText: { color: Colors.bgDark, fontWeight: '800', fontSize: 15, letterSpacing: 2 },
 });

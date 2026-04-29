@@ -68,6 +68,7 @@ export function PlayerCard({ player, isActive, isMe, propertyCount }: Props) {
     >
       {/* Colored header strip */}
       <View style={[styles.colorStrip, { backgroundColor: player.color }]}>
+        <View style={styles.stripShine} pointerEvents="none" />
         <Text style={styles.token}>{player.token}</Text>
         {isActive && (
           <Animated.View style={[styles.activeBadge, { opacity: glowAnim }]}>
@@ -78,6 +79,8 @@ export function PlayerCard({ player, isActive, isMe, propertyCount }: Props) {
 
       {/* Card body */}
       <View style={styles.body}>
+        {/* Surface highlight for 3D depth */}
+        <View style={styles.bodySurface} pointerEvents="none" />
         <Text style={[styles.name, { color: player.color }]} numberOfLines={1}>
           {player.name}{isMe && ' (You)'}
         </Text>
@@ -109,10 +112,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: Colors.bgPanel,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOffset: { width: 2, height: 14 },
+    shadowOpacity: 0.65,
+    shadowRadius: 16,
+    elevation: 12,
   },
   cardBankrupt: { opacity: 0.4 },
 
@@ -122,6 +125,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    overflow: 'hidden',
+  },
+  stripShine: {
+    position: 'absolute', top: 0, left: 0, right: 0,
+    height: '55%',
+    backgroundColor: 'rgba(255,255,255,0.22)',
   },
   token: { fontSize: 22 },
 
@@ -136,6 +145,11 @@ const styles = StyleSheet.create({
   },
 
   body: { padding: 10, gap: 6 },
+  bodySurface: {
+    position: 'absolute', top: 0, left: 0, right: 0, height: 28,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderTopLeftRadius: 0, borderTopRightRadius: 0,
+  },
   name: { fontWeight: '800', fontSize: 13, letterSpacing: 0.3 },
 
   statsRow: { flexDirection: 'row', gap: 6, alignItems: 'center' },
