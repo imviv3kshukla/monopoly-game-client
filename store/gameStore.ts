@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BoardSpace } from '../constants/board';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -69,6 +70,10 @@ interface Store {
   gameState: GameState | null;
   setGameState: (state: GameState) => void;
 
+  // Board definition from server
+  boardSpaces: BoardSpace[];
+  setBoardSpaces: (spaces: BoardSpace[]) => void;
+
   // Derived helpers
   myPlayer: () => Player | null;
   isMyTurn: () => boolean;
@@ -104,6 +109,9 @@ export const useGameStore = create<Store>((set, get) => ({
 
   gameState: null,
   setGameState: (state) => set({ gameState: state }),
+
+  boardSpaces: [],
+  setBoardSpaces: (spaces) => set({ boardSpaces: spaces }),
 
   // Returns your own Player object
   myPlayer: () => {

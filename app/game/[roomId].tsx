@@ -9,19 +9,21 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { useGameStore } from '../../store/gameStore';
 import {
-  sendRoll, sendBuy, sendSkipBuy, sendBuildHouse,
+  connectToRoom, sendRoll, sendBuy, sendSkipBuy, sendBuildHouse,
   sendEndTurn, sendPayJail, sendStartGame, sendEndGame,
 } from '../../services/socket';
+import { API_BASE_URL } from '../../services/config';
 import { Board } from '../../components/Board';
 import { AnimatedDice } from '../../components/AnimatedDice';
 import { PlayerCard } from '../../components/PlayerCard';
 import { PropertyModal } from '../../components/PropertyModal';
 import { Colors } from '../../constants/theme';
-import { BoardSpace, BOARD } from '../../constants/board';
+import { BoardSpace } from '../../constants/board';
+import { fetchBoardSpaces } from '../../services/board';
 
 export default function GameScreen() {
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
-  const { gameState, myPlayerId, isMyTurn, currentPlayer, myPlayer } = useGameStore();
+  const { gameState, myPlayerId, isMyTurn, currentPlayer, myPlayer, boardSpaces, setBoardSpaces } = useGameStore();
   const [selectedSpace, setSelectedSpace] = useState<BoardSpace | null>(null);
   const [rolling, setRolling] = useState(false);
   const [showLog, setShowLog] = useState(false);
@@ -40,6 +42,34 @@ export default function GameScreen() {
   useEffect(() => () => {
     if (autoEndTimer.current) clearTimeout(autoEndTimer.current);
   }, []);
+
+  useEffect(() => {
+    if (gameState || !roomId) return;
+    let cancelled = false;
+    async function rejoinFromSession() {
+      const session = await useGameStore.getState().loadSession();
+      if (!session || session.roomId !== roomId) {
+        router.replace('/');
+        return;
+      }
+      try {
+        const res = await fetch(`${API_BASE_URL}/rooms/${session.roomId}/rejoin/${session.playerId}`);
+        if (!res.ok) {
+          await useGameStore.getState().clearSession();
+          router.replace('/');
+          return;
+        }
+        const data = await res.json();
+        if (cancelled) return;
+        useGameStore.getState().setGameState(data.state);
+        connectToRoom(session.roomId, session.playerId);
+      } catch {
+        if (!cancelled) router.replace('/');
+      }
+    }
+    rejoinFromSession();
+    return () => { cancelled = true; };
+  }, [gameState, roomId]);
 
   // Reset roll state when turn changes (new player's turn begins)
   useEffect(() => {
@@ -66,6 +96,19 @@ export default function GameScreen() {
     }
   }, [gameState?.lastDice]);
 
+  useEffect(() => {
+    if (boardSpaces.length > 0) return;
+    let cancelled = false;
+    fetchBoardSpaces()
+      .then(spaces => {
+        if (!cancelled) setBoardSpaces(spaces);
+      })
+      .catch(error => {
+        console.error('Failed to load board definition', error);
+      });
+    return () => { cancelled = true; };
+  }, [boardSpaces.length, setBoardSpaces]);
+
   // ── scheduleAutoEnd: clears any existing timer, starts a 2.5s countdown to sendEndTurn
   const scheduleAutoEnd = useCallback(() => {
     if (autoEndTimer.current) clearTimeout(autoEndTimer.current);
@@ -90,16 +133,6 @@ export default function GameScreen() {
     scheduleAutoEnd();
   }, [gameState?.pendingAction]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!gameState) return <LoadingScreen />;
-
-  const propertyOnSelected = selectedSpace ? gameState.properties[selectedSpace.id] : undefined;
-  const isOwnerMe = propertyOnSelected?.ownerId === myPlayerId;
-  const ownsColorSet = selectedSpace?.color
-    ? BOARD.filter(s => s.color === selectedSpace.color)
-        .every(s => gameState.properties[s.id]?.ownerId === myPlayerId)
-    : false;
-  const showBuyButtons = gameState.pendingAction === 'BUY' && myTurn && selectedSpace?.id === me?.position;
-
   const handleRoll = () => {
     setRolling(true);
     setHasRolledThisTurn(true);
@@ -122,23 +155,35 @@ export default function GameScreen() {
     if (playerId !== myPlayerId) return;
 
     // Read fresh state — avoids stale closure issues with async animations
-    const { gameState: gs, myPlayerId: pid, isMyTurn: checkMyTurn } = useGameStore.getState();
-    if (!checkMyTurn() || !gs) return;
+      const { gameState: gs, myPlayerId: pid, isMyTurn: checkMyTurn, boardSpaces: freshBoardSpaces } = useGameStore.getState();
+      if (!checkMyTurn() || !gs) return;
 
     if (gs.pendingAction === 'BUY') {
       // Cancel auto-end, let player decide to buy or skip
       if (autoEndTimer.current) { clearTimeout(autoEndTimer.current); autoEndTimer.current = null; }
       const mePlayer = gs.players.find(p => p.id === pid);
-      if (mePlayer) setSelectedSpace(BOARD[mePlayer.position]);
+      if (mePlayer) setSelectedSpace(freshBoardSpaces.find(space => space.id === mePlayer.position) ?? null);
     } else {
       // Re-start the auto-end timer from the end of animation (gives 2.5s to view result)
       scheduleAutoEnd();
     }
   }, [myPlayerId, scheduleAutoEnd]);
 
+  if (!gameState) return <LoadingScreen />;
+
+  const propertyOnSelected = selectedSpace ? gameState.properties[selectedSpace.id] : undefined;
+  const isOwnerMe = propertyOnSelected?.ownerId === myPlayerId;
+  const ownsColorSet = selectedSpace?.color
+    ? boardSpaces.filter(s => s.color === selectedSpace.color)
+        .every(s => gameState.properties[s.id]?.ownerId === myPlayerId)
+    : false;
+  const showBuyButtons = gameState.pendingAction === 'BUY' && myTurn && selectedSpace?.id === me?.position;
+
   if (gameState.status === 'WAITING') {
     return <WaitingRoom roomId={roomId!} state={gameState} myPlayerId={myPlayerId!} />;
   }
+
+  if (boardSpaces.length === 0) return <LoadingScreen />;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -180,6 +225,7 @@ export default function GameScreen() {
 
         {/* ── Board ── */}
         <Board
+          spaces={boardSpaces}
           players={gameState.players}
           properties={gameState.properties}
           onTilePress={setSelectedSpace}

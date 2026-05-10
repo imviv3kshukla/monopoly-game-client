@@ -9,10 +9,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useGameStore } from '../store/gameStore';
 import { connectToRoom } from '../services/socket';
+import { API_BASE_URL } from '../services/config';
 import { Colors } from '../constants/theme';
-
-const API = 'http://192.168.29.233:8080/api';
-// CHANGE THE IP ABOVE TO YOUR MAC'S IP
 
 const { width: screenW, height: screenH } = Dimensions.get('window');
 
@@ -99,7 +97,7 @@ export default function LobbyScreen() {
       const session = await useGameStore.getState().loadSession();
       if (!session) return;
       try {
-        const res = await fetch(`${API}/rooms/${session.roomId}/rejoin/${session.playerId}`);
+        const res = await fetch(`${API_BASE_URL}/rooms/${session.roomId}/rejoin/${session.playerId}`);
         if (res.ok) {
           const data = await res.json();
           useGameStore.getState().setGameState(data.state);
@@ -139,7 +137,7 @@ export default function LobbyScreen() {
     if (!name.trim()) { Alert.alert('Enter your name first!'); return; }
     setLoading(true);
     try {
-      const res = await fetch(`${API}/rooms/create`, {
+      const res = await fetch(`${API_BASE_URL}/rooms/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ playerName: name.trim() }),
@@ -160,7 +158,7 @@ export default function LobbyScreen() {
     if (!roomCode.trim()) { Alert.alert('Enter a room code!'); return; }
     setLoading(true);
     try {
-      const res = await fetch(`${API}/rooms/${roomCode.toUpperCase().trim()}/join`, {
+      const res = await fetch(`${API_BASE_URL}/rooms/${roomCode.toUpperCase().trim()}/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ playerName: name.trim() }),

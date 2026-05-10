@@ -113,7 +113,7 @@ monopoly-game-client/
 │   └── PropertyModal.tsx    # Bottom-sheet property detail + buy/build actions
 │
 ├── constants/
-│   ├── board.ts             # 36 board spaces, getGridPos(), getSide()
+│   ├── board.ts             # Board types + getGridPos()/getSide() layout helpers
 │   ├── theme.ts             # Colours, city landmark + scene data
 │   └── rules.ts             # Full game rules content
 │
@@ -168,16 +168,19 @@ cd monopoly-game
 # WebSocket endpoint: ws://localhost:8080/ws
 ```
 
-### 2 — Configure the WebSocket URL
+### 2 — Configure the backend URL
 
-Edit `services/socket.ts` and point `brokerURL` to your server:
+By default, the client uses the Expo dev host when available and port `8080`.
+For web on the same machine, this resolves to `http://localhost:8080/api` and
+`ws://localhost:8080/ws/websocket`.
 
-```ts
-// For local dev on a physical device, use your machine's LAN IP
-brokerURL: 'ws://192.168.x.x:8080/ws'
+Override it with Expo public env vars when needed:
 
-// For emulator / web
-brokerURL: 'ws://localhost:8080/ws'
+```bash
+EXPO_PUBLIC_SERVER_HOST=192.168.x.x npx expo start
+EXPO_PUBLIC_BACKEND_BASE_URL=http://192.168.x.x:8080 npx expo start
+EXPO_PUBLIC_API_BASE_URL=http://192.168.x.x:8080/api npx expo start
+EXPO_PUBLIC_WS_URL=ws://192.168.x.x:8080/ws/websocket npx expo start
 ```
 
 ### 3 — Start the client

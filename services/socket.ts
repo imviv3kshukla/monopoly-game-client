@@ -3,9 +3,7 @@
 
 import { Client } from '@stomp/stompjs';
 import { useGameStore } from '../store/gameStore';
-
-const SERVER_URL = 'ws://192.168.29.233:8080/ws/websocket';
-// Change to your server IP. In dev, use your computer's local IP e.g. ws://192.168.1.5:8080/ws/websocket
+import { API_BASE_URL, WS_URL } from './config';
 
 let client: Client | null = null;
 
@@ -13,7 +11,7 @@ export function connectToRoom(roomId: string, playerId: string) {
   if (client?.active) client.deactivate();
 
   client = new Client({
-    brokerURL: SERVER_URL,
+    brokerURL: WS_URL,
 
     // Called once WebSocket connects
     onConnect: () => {
@@ -83,9 +81,8 @@ export function disconnect() {
 }
 
 export async function sendStartGame(roomId: string, playerId: string) {
-  const SERVER_HOST = '192.168.29.233'; // your Mac's IP
   try {
-    await fetch(`http://${SERVER_HOST}:8080/api/rooms/${roomId}/start`, {
+    await fetch(`${API_BASE_URL}/rooms/${roomId}/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ playerId }),

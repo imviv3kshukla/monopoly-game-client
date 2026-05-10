@@ -112,7 +112,7 @@ export function PropertyModal({
                   )}
                 </View>
               </View>
-            ) : (space.price && space.type !== 'tax' && space.type !== 'chance' && space.type !== 'community') ? (
+            ) : ((space.price ?? 0) > 0 && space.type !== 'tax' && space.type !== 'chance' && space.type !== 'community') ? (
               <View style={styles.availableBadge}>
                 <Text style={styles.availableText}>✨  AVAILABLE FOR PURCHASE</Text>
               </View>

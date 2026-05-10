@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Dimensions } from 'react-native';
-import { BOARD, getGridPos, getSide, BoardSpace } from '../constants/board';
+import { getGridPos, getSide, BoardSpace } from '../constants/board';
 import { Colors, CITY_PHOTOS, TILE_ICONS } from '../constants/theme';
 import { Player, Property } from '../store/gameStore';
 
@@ -10,9 +10,8 @@ const { width: screenW } = Dimensions.get('window');
 const BOARD_SIZE = Math.min(screenW - 16, 720);
 const CORNER = BOARD_SIZE * 0.13;
 const SIDE = (BOARD_SIZE - CORNER * 2) / 8; // 8 non-corner tiles per side
-const TOTAL_TILES = 36;
-
 interface Props {
+  spaces: BoardSpace[];
   players: Player[];
   properties: Record<number, Property>;
   onTilePress: (space: BoardSpace) => void;
@@ -20,7 +19,7 @@ interface Props {
   rolling?: boolean;
 }
 
-export function Board({ players, properties, onTilePress, onMoveComplete, rolling }: Props) {
+export function Board({ spaces, players, properties, onTilePress, onMoveComplete, rolling }: Props) {
   const [displayPositions, setDisplayPositions] = useState<Record<string, number>>(() => {
     const init: Record<string, number> = {};
     players.forEach(p => { init[p.id] = p.position; });
@@ -32,12 +31,14 @@ export function Board({ players, properties, onTilePress, onMoveComplete, rollin
   const isMountedRef = useRef(true);
   // Holds moves received while dice are still rolling; flushed when rolling stops
   const pendingMovesRef = useRef<{ playerId: string; from: number; to: number }[]>([]);
+  const totalTiles = spaces.length;
 
   useEffect(() => { onMoveCompleteRef.current = onMoveComplete; }, [onMoveComplete]);
   useEffect(() => () => { isMountedRef.current = false; }, []);
 
   const startAnimation = useCallback((playerId: string, from: number, to: number) => {
-    const forwardSteps = (to - from + TOTAL_TILES) % TOTAL_TILES;
+    if (totalTiles <= 0) return;
+    const forwardSteps = (to - from + totalTiles) % totalTiles;
 
     if (forwardSteps === 0 || forwardSteps > 12) {
       setDisplayPositions(dp => ({ ...dp, [playerId]: to }));
@@ -50,7 +51,7 @@ export function Board({ players, properties, onTilePress, onMoveComplete, rollin
     const steps: number[] = [];
     let pos = from;
     for (let i = 0; i < forwardSteps; i++) {
-      pos = (pos + 1) % TOTAL_TILES;
+      pos = (pos + 1) % totalTiles;
       steps.push(pos);
     }
 
@@ -63,7 +64,7 @@ export function Board({ players, properties, onTilePress, onMoveComplete, rollin
       setTimeout(tick, 550);
     };
     tick();
-  }, []);
+  }, [totalTiles]);
 
   // Record position changes; buffer them while dice are rolling
   const posKey = players.map(p => `${p.id}:${p.position}`).join(',');
@@ -109,7 +110,7 @@ export function Board({ players, properties, onTilePress, onMoveComplete, rollin
     <View style={[styles.boardOuter, { width: BOARD_SIZE + 12, height: BOARD_SIZE + 12 }]}>
       <View style={[styles.boardWrapper, { width: BOARD_SIZE + 6, height: BOARD_SIZE + 6 }]}>
         <View style={[styles.board, { width: BOARD_SIZE, height: BOARD_SIZE }]}>
-          {BOARD.map(sp => (
+          {spaces.map(sp => (
             <Tile
               key={sp.id}
               space={sp}
@@ -194,8 +195,10 @@ function TileContent({ space, side }: { space: BoardSpace; side: string }) {
       {photo ? <Text style={styles.cityEmoji}>{photo.emoji}</Text>
              : icon ? <Text style={styles.tileIcon}>{icon}</Text> : null}
       <Text style={styles.tileName} numberOfLines={2}>{space.name}</Text>
-      {space.price && (
-        <Text style={styles.tilePrice}>₹{(space.price / 1000).toFixed(space.price % 1000 ? 1 : 0)}k</Text>
+      {(space.price ?? 0) > 0 && (
+        <Text style={styles.tilePrice}>
+          ₹{((space.price ?? 0) / 1000).toFixed((space.price ?? 0) % 1000 ? 1 : 0)}k
+        </Text>
       )}
     </View>
   );
