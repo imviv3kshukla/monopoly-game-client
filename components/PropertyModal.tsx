@@ -1,7 +1,10 @@
 // components/PropertyModal.tsx — colorful property detail modal
 
-import React from 'react';
-import { View, Text, Modal, StyleSheet, TouchableOpacity, Pressable, ScrollView } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import {
+  View, Text, Modal, StyleSheet, TouchableOpacity,
+  Pressable, ScrollView, Platform, Animated, Easing,
+} from 'react-native';
 import { Colors, CITY_PHOTOS } from '../constants/theme';
 import { BoardSpace } from '../constants/board';
 import { Player, Property } from '../store/gameStore';
@@ -27,6 +30,18 @@ export function PropertyModal({
   isOwnerMe, ownsColorSet, pendingBuy,
   onBuy, onSkipBuy, onBuild, onClose,
 }: Props) {
+  const isWeb = Platform.OS === 'web';
+  const cardAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(cardAnim, {
+      toValue: visible ? 1 : 0,
+      duration: visible ? 180 : 120,
+      easing: visible ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [visible, cardAnim]);
+
   if (!space) return null;
 
   const owner = property ? players.find(p => p.id === property.ownerId) : null;
@@ -37,9 +52,40 @@ export function PropertyModal({
                         myMoney >= (space.houseCost || 0) && space.type === 'property';
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.overlay} onPress={pendingBuy ? undefined : onClose}>
-        <Pressable style={styles.modal}>
+    <Modal visible={visible} transparent animationType={isWeb ? 'fade' : 'slide'} onRequestClose={onClose}>
+      <Pressable
+        style={[styles.overlay, isWeb && styles.overlayWeb]}
+        onPress={pendingBuy ? undefined : onClose}
+      >
+        <Animated.View
+          style={[
+            styles.modal,
+            isWeb && styles.modalWeb,
+            isWeb && {
+              opacity: cardAnim,
+              transform: [
+                {
+                  translateY: cardAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [18, 0],
+                  }),
+                },
+                {
+                  scale: cardAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.96, 1],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          <Pressable style={styles.modalSurface}>
+          {isWeb && !pendingBuy && (
+            <TouchableOpacity style={styles.webCloseBtn} onPress={onClose} activeOpacity={0.82}>
+              <Text style={styles.webCloseText}>×</Text>
+            </TouchableOpacity>
+          )}
           {/* Translucent city/landmark backdrop */}
           {photo && (
             <View style={styles.cityBackdrop} pointerEvents="none">
@@ -50,7 +96,7 @@ export function PropertyModal({
             <View style={[styles.colorWash, { backgroundColor: colorBar }]} pointerEvents="none" />
           )}
           {/* Destination scene header */}
-          <View style={[styles.colorBand, { backgroundColor: colorBar || Colors.electric }]}>
+          <View style={[styles.colorBand, isWeb && styles.colorBandWeb, { backgroundColor: colorBar || Colors.electric }]}>
             {/* Bottom depth shadow */}
             <View style={styles.colorBandDepth} />
             {/* Top shine */}
@@ -69,7 +115,11 @@ export function PropertyModal({
             )}
           </View>
 
-          <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            style={isWeb && styles.contentScrollWeb}
+            contentContainerStyle={[styles.content, isWeb && styles.contentWeb]}
+            showsVerticalScrollIndicator={false}
+          >
             {/* Title */}
             <View style={styles.titleRow}>
               <View style={{ flex: 1 }}>
@@ -152,7 +202,8 @@ export function PropertyModal({
               </View>
             )}
           </ScrollView>
-        </Pressable>
+          </Pressable>
+        </Animated.View>
       </Pressable>
     </Modal>
   );
@@ -295,6 +346,11 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'flex-end',
     padding: 0,
   },
+  overlayWeb: {
+    justifyContent: 'center',
+    padding: 28,
+    backgroundColor: 'rgba(6,4,21,0.66)',
+  },
   modal: {
     backgroundColor: Colors.bgPanel,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
@@ -303,11 +359,49 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(245,158,11,0.2)',
     borderBottomWidth: 0,
   },
+  modalWeb: {
+    width: 'min(560px, 94vw)' as any,
+    maxWidth: 560,
+    maxHeight: '86%',
+    borderRadius: 18,
+    borderBottomWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 22 },
+    shadowOpacity: 0.45,
+    shadowRadius: 34,
+    elevation: 24,
+  },
+  modalSurface: {
+    overflow: 'hidden',
+  },
+  webCloseBtn: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    zIndex: 20,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(6,4,21,0.5)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  webCloseText: {
+    color: '#fff',
+    fontSize: 24,
+    lineHeight: 27,
+    fontWeight: '300',
+  },
 
   colorBand: {
     height: 148, width: '100%',
     alignItems: 'center', justifyContent: 'center',
     overflow: 'hidden', position: 'relative',
+  },
+  colorBandWeb: {
+    height: 112,
   },
   colorBandDepth: {
     position: 'absolute', bottom: 0, left: 0, right: 0, height: '45%',
@@ -346,7 +440,15 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
 
+  contentScrollWeb: {
+    maxHeight: 500,
+  },
   content: { padding: 20, paddingBottom: 36, gap: 16 },
+  contentWeb: {
+    padding: 18,
+    paddingBottom: 20,
+    gap: 14,
+  },
 
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   title: { color: Colors.goldLight, fontSize: 24, fontWeight: '800', letterSpacing: 0.5 },
