@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Animated, Modal, Alert,
+  Animated, Modal, Alert, useWindowDimensions, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
@@ -34,6 +34,10 @@ export default function GameScreen() {
   const me = myPlayer();
   const myTurn = isMyTurn();
   const current = currentPlayer();
+  const { width } = useWindowDimensions();
+  const isWideLayout = Platform.OS === 'web' && width >= 760;
+  const webSidebarWidth = width < 960 ? 300 : 392;
+  const webBoardPadding = width < 960 ? 14 : 28;
 
   // Timer ref for auto-end-turn
   const autoEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -185,12 +189,80 @@ export default function GameScreen() {
 
   if (boardSpaces.length === 0) return <LoadingScreen />;
 
+  const playerCards = gameState.players.map((p, i) => {
+    const propCount = Object.values(gameState.properties).filter(pr => pr.ownerId === p.id).length;
+    return (
+      <PlayerCard
+        key={p.id}
+        player={p}
+        isActive={i === gameState.currentPlayerIndex}
+        isMe={p.id === myPlayerId}
+        propertyCount={propCount}
+      />
+    );
+  });
+
+  const controls = myTurn && !me?.bankrupt && !hasRolledThisTurn ? (
+    <View style={styles.controls}>
+      {gameState.pendingAction === null && (
+        <ActionButton label="🎲  ROLL DICE" variant="gold" onPress={handleRoll} disabled={rolling} />
+      )}
+      {me?.inJail && gameState.pendingAction === null && (
+        <ActionButton
+          label="⛓️  Pay ₹500 Bail"
+          variant="danger"
+          onPress={() => sendPayJail(roomId!, myPlayerId!)}
+        />
+      )}
+    </View>
+  ) : null;
+
+  const autoEndHint = myTurn && hasRolledThisTurn && !rolling && gameState.pendingAction === null && !selectedSpace ? (
+    <View style={styles.autoEndHint}>
+      <Text style={styles.autoEndHintText}>⏱  Turn ending automatically...</Text>
+    </View>
+  ) : null;
+
+  const board = (
+    <Board
+      spaces={boardSpaces}
+      players={gameState.players}
+      properties={gameState.properties}
+      onTilePress={setSelectedSpace}
+      onMoveComplete={handleMoveComplete}
+      rolling={rolling}
+    />
+  );
+  const fullBoardSize = 732;
+  const webBoardScale = Math.min(1, Math.max(0.46, (width - webSidebarWidth - webBoardPadding * 2) / fullBoardSize));
+  const webBoard = (
+    <View style={[styles.webBoardScaleBox, {
+      width: fullBoardSize * webBoardScale,
+      height: fullBoardSize * webBoardScale,
+    }]}>
+      <View style={[styles.webBoardScaleInner, { transform: [{ scale: webBoardScale }] }]}>
+        {board}
+      </View>
+    </View>
+  );
+
+  const gameLog = (
+    <View style={styles.logPanel}>
+      {gameState.log.slice(0, 15).map((line, i) => (
+        <View key={i} style={styles.logLineRow}>
+          <View style={[styles.logBullet, i === 0 && styles.logBulletActive]} />
+          <Text style={[styles.logLine, i === 0 && styles.logLineLatest]} numberOfLines={2}>{line}</Text>
+        </View>
+      ))}
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Stack.Screen options={{ headerShown: false }} />
 
       {/* ── Top Bar ── */}
-      <View style={styles.topBar}>
+      {!isWideLayout && <View style={styles.topBar}>
         <TouchableOpacity onPress={() => router.replace('/')} style={styles.iconBtn}>
           <Text style={styles.iconBtnText}>⌂</Text>
         </TouchableOpacity>
@@ -201,37 +273,95 @@ export default function GameScreen() {
         <TouchableOpacity onPress={() => router.push('/rules')} style={styles.iconBtn}>
           <Text style={styles.iconBtnText}>📖</Text>
         </TouchableOpacity>
-      </View>
+      </View>}
 
+      {isWideLayout ? (
+        <View style={styles.webShell}>
+          <ScrollView
+            style={[styles.webSidebar, {
+              width: webSidebarWidth,
+              minWidth: webSidebarWidth,
+              maxWidth: webSidebarWidth,
+              flexBasis: webSidebarWidth,
+            }]}
+            contentContainerStyle={styles.webSidebarContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.webBrandRow}>
+              <View style={styles.webLogo}>
+                <Text style={styles.webLogoText}>IB</Text>
+              </View>
+              <View style={styles.webBrandCopy}>
+                <Text style={styles.webTitle}>Indian Business</Text>
+                <Text style={styles.webSubtitle}>Property Trading Game</Text>
+              </View>
+            </View>
+
+            <View style={styles.webRoomRow}>
+              <TouchableOpacity onPress={() => router.replace('/')} style={styles.webSmallBtn}>
+                <Text style={styles.webSmallBtnText}>⌂</Text>
+              </TouchableOpacity>
+              <View style={styles.webRoomBadge}>
+                <Text style={styles.roomBadgeLabel}>ROOM</Text>
+                <Text style={styles.roomBadgeCode}>{roomId}</Text>
+              </View>
+              <TouchableOpacity onPress={() => router.push('/rules')} style={styles.webSmallBtn}>
+                <Text style={styles.webSmallBtnText}>📖</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.webPanel}>
+              <TurnBanner isMyTurn={myTurn} hasRolled={hasRolledThisTurn} current={current} />
+              <View style={styles.webDiceBox}>
+                <AnimatedDice values={gameState.lastDice} rolling={rolling} />
+              </View>
+              {controls}
+              {autoEndHint}
+            </View>
+
+            <View style={styles.webPanel}>
+              <View style={styles.webSectionHeader}>
+                <Text style={styles.webSectionTitle}>Players</Text>
+                <Text style={styles.webSectionMeta}>{gameState.players.length}/4</Text>
+              </View>
+              <View style={styles.webPlayersList}>{playerCards}</View>
+            </View>
+
+            <View style={styles.webPanel}>
+              <View style={styles.webSectionHeader}>
+                <Text style={styles.webSectionTitle}>Game History</Text>
+                <Text style={styles.webSectionMeta}>{gameState.log.length}</Text>
+              </View>
+              {gameLog}
+            </View>
+
+            {gameState.status === 'PLAYING' && (
+              <TouchableOpacity style={styles.endGameRow} onPress={handleEndGame}>
+                <Text style={styles.endGameText}>⛔  End Game</Text>
+              </TouchableOpacity>
+            )}
+          </ScrollView>
+
+          <ScrollView
+            style={styles.webBoardPane}
+            contentContainerStyle={[styles.webBoardContent, { padding: webBoardPadding }]}
+            showsVerticalScrollIndicator={false}
+          >
+            {webBoard}
+          </ScrollView>
+        </View>
+      ) : (
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* ── Players ── */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.playersRow}>
-          {gameState.players.map((p, i) => {
-            const propCount = Object.values(gameState.properties).filter(pr => pr.ownerId === p.id).length;
-            return (
-              <PlayerCard
-                key={p.id}
-                player={p}
-                isActive={i === gameState.currentPlayerIndex}
-                isMe={p.id === myPlayerId}
-                propertyCount={propCount}
-              />
-            );
-          })}
+          {playerCards}
         </ScrollView>
 
         {/* ── Turn Banner ── */}
         <TurnBanner isMyTurn={myTurn} hasRolled={hasRolledThisTurn} current={current} />
 
         {/* ── Board ── */}
-        <Board
-          spaces={boardSpaces}
-          players={gameState.players}
-          properties={gameState.properties}
-          onTilePress={setSelectedSpace}
-          onMoveComplete={handleMoveComplete}
-          rolling={rolling}
-        />
+        {board}
 
         {/* ── Dice ── */}
         <View style={styles.diceSection}>
@@ -239,28 +369,10 @@ export default function GameScreen() {
         </View>
 
         {/* ── Action Buttons ── (only shown before rolling) ── */}
-        {myTurn && !me?.bankrupt && !hasRolledThisTurn && (
-          <View style={styles.controls}>
-            {gameState.pendingAction === null && (
-              <ActionButton label="🎲  ROLL DICE" variant="gold" onPress={handleRoll} disabled={rolling} />
-            )}
-            {me?.inJail && gameState.pendingAction === null && (
-              <ActionButton
-                label="⛓️  Pay ₹500 Bail"
-                variant="danger"
-                onPress={() => sendPayJail(roomId!, myPlayerId!)}
-              />
-            )}
-            {/* No End Turn button — turn ends automatically after roll + animation */}
-          </View>
-        )}
+        {controls}
 
         {/* ── Auto-end hint (after rolling) ── */}
-        {myTurn && hasRolledThisTurn && !rolling && gameState.pendingAction === null && !selectedSpace && (
-          <View style={styles.autoEndHint}>
-            <Text style={styles.autoEndHintText}>⏱  Turn ending automatically...</Text>
-          </View>
-        )}
+        {autoEndHint}
 
         {/* ── End Game ── */}
         {gameState.status === 'PLAYING' && (
@@ -277,16 +389,10 @@ export default function GameScreen() {
         </TouchableOpacity>
 
         {showLog && (
-          <View style={styles.logPanel}>
-            {gameState.log.slice(0, 15).map((line, i) => (
-              <View key={i} style={styles.logLineRow}>
-                <View style={[styles.logBullet, i === 0 && styles.logBulletActive]} />
-                <Text style={[styles.logLine, i === 0 && styles.logLineLatest]} numberOfLines={2}>{line}</Text>
-              </View>
-            ))}
-          </View>
+          gameLog
         )}
       </ScrollView>
+      )}
 
       {/* ── Property Modal ── */}
       <PropertyModal
@@ -580,6 +686,139 @@ function GameOverModal() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bgDark },
   scroll: { paddingHorizontal: 12, paddingBottom: 50, gap: 14 },
+
+  webShell: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: '#070510',
+  },
+  webSidebar: {
+    width: 392,
+    flexShrink: 0,
+    backgroundColor: '#0b0718',
+    borderRightWidth: 1,
+    borderRightColor: 'rgba(245,158,11,0.18)',
+  },
+  webSidebarContent: {
+    padding: 20,
+    gap: 16,
+    paddingBottom: 28,
+  },
+  webBoardPane: {
+    flex: 1,
+    backgroundColor: '#0a0716',
+  },
+  webBoardContent: {
+    minHeight: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 28,
+  },
+  webBoardScaleBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible',
+  },
+  webBoardScaleInner: {
+    width: 732,
+    height: 732,
+    transformOrigin: 'top left',
+  },
+  webBrandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  webLogo: {
+    width: 58,
+    height: 58,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.gold,
+    shadowColor: Colors.gold,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.45,
+    shadowRadius: 18,
+    elevation: 8,
+  },
+  webLogoText: {
+    color: Colors.bgDark,
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  webBrandCopy: { flex: 1 },
+  webTitle: {
+    color: Colors.textPrimary,
+    fontSize: 24,
+    fontWeight: '900',
+  },
+  webSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    marginTop: 3,
+  },
+  webRoomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  webSmallBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  webSmallBtnText: { fontSize: 18 },
+  webRoomBadge: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+    borderRadius: 10,
+    backgroundColor: 'rgba(245,158,11,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(245,158,11,0.22)',
+  },
+  webPanel: {
+    backgroundColor: Colors.bgPanel,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(245,158,11,0.14)',
+    padding: 14,
+    gap: 12,
+  },
+  webDiceBox: {
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  webSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  webSectionTitle: {
+    color: Colors.gold,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+  },
+  webSectionMeta: {
+    color: Colors.textMuted,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  webPlayersList: {
+    gap: 10,
+  },
 
   loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bgDark, gap: 14 },
   loadingTitle: { color: Colors.goldLight, fontSize: 40, fontWeight: '900', letterSpacing: 8 },
