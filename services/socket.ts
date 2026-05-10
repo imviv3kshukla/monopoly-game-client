@@ -58,6 +58,10 @@ export function sendEndTurn(roomId: string, playerId: string) {
   send(`/app/room.${roomId}.endTurn`, { playerId });
 }
 
+export function sendEndGame(roomId: string, playerId: string) {
+  send(`/app/room.${roomId}.endGame`, { playerId });
+}
+
 export function sendPayJail(roomId: string, playerId: string) {
   send(`/app/room.${roomId}.payJail`, { playerId });
 }

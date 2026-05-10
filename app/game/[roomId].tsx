@@ -3,14 +3,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Animated, Modal,
+  Animated, Modal, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { useGameStore } from '../../store/gameStore';
 import {
   sendRoll, sendBuy, sendSkipBuy, sendBuildHouse,
-  sendEndTurn, sendPayJail, sendStartGame,
+  sendEndTurn, sendPayJail, sendStartGame, sendEndGame,
 } from '../../services/socket';
 import { Board } from '../../components/Board';
 import { AnimatedDice } from '../../components/AnimatedDice';
@@ -104,6 +104,17 @@ export default function GameScreen() {
     setRolling(true);
     setHasRolledThisTurn(true);
     sendRoll(roomId!, myPlayerId!);
+  };
+
+  const handleEndGame = () => {
+    Alert.alert(
+      'End Game',
+      'Are you sure? This will end the game and compute final scores for all players.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'End Game', style: 'destructive', onPress: () => sendEndGame(roomId!, myPlayerId!) },
+      ]
+    );
   };
 
   // ── Called by Board when a player's step animation finishes at their final tile
@@ -205,6 +216,13 @@ export default function GameScreen() {
           </View>
         )}
 
+        {/* ── End Game ── */}
+        {gameState.status === 'PLAYING' && (
+          <TouchableOpacity style={styles.endGameRow} onPress={handleEndGame}>
+            <Text style={styles.endGameText}>⛔  End Game</Text>
+          </TouchableOpacity>
+        )}
+
         {/* ── Log ── */}
         <TouchableOpacity onPress={() => setShowLog(!showLog)} style={styles.logToggle} activeOpacity={0.8}>
           <View style={styles.logDot} />
@@ -256,9 +274,7 @@ export default function GameScreen() {
       <CardDrawnModal text={showCardModal} />
 
       {/* ── Game Over ── */}
-      {gameState.status === 'FINISHED' && (
-        <GameOverModal winner={gameState.players.find(p => p.id === gameState.winnerId)} />
-      )}
+      <GameOverModal />
     </SafeAreaView>
   );
 }
@@ -444,8 +460,10 @@ function CardDrawnModal({ text }: { text: string | null }) {
   );
 }
 
-function GameOverModal({ winner }: any) {
-  if (!winner) return null;
+function GameOverModal() {
+  const { gameState } = useGameStore();
+  if (!gameState || gameState.status !== 'FINISHED') return null;
+
   const pulse = useRef(new Animated.Value(0.8)).current;
   useEffect(() => {
     Animated.loop(
@@ -455,17 +473,60 @@ function GameOverModal({ winner }: any) {
       ])
     ).start();
   }, []);
+
+  const summaries = gameState.finalSummaries;
+  const rankBadges = ['🥇', '🥈', '🥉', '4️⃣'];
+  const winner = summaries
+    ? summaries.find(s => s.rank === 1)
+    : gameState.players.find(p => p.id === gameState.winnerId);
+
   return (
     <View style={styles.gameOverOverlay}>
-      <Animated.Text style={[styles.trophy, { transform: [{ scale: pulse }] }]}>🏆</Animated.Text>
-      <Text style={styles.gameOverTitle}>GAME OVER!</Text>
-      <Text style={styles.gameOverWinner}>{winner.token}  {winner.name}</Text>
-      <Text style={styles.gameOverSub}>WINS THE GAME!</Text>
-      <Text style={styles.gameOverMoney}>₹{winner.money.toLocaleString()}</Text>
-      <TouchableOpacity style={styles.gameOverBtn} onPress={() => router.replace('/')}>
-        <View style={styles.btnShine} />
-        <Text style={styles.gameOverBtnText}>Back to Lobby</Text>
-      </TouchableOpacity>
+      <ScrollView contentContainerStyle={styles.gameOverScroll} showsVerticalScrollIndicator={false}>
+        <Animated.Text style={[styles.trophy, { transform: [{ scale: pulse }] }]}>🏆</Animated.Text>
+        <Text style={styles.gameOverTitle}>GAME OVER!</Text>
+        {winner && (
+          <>
+            <Text style={styles.gameOverWinner}>{winner.token}  {winner.name}</Text>
+            <Text style={styles.gameOverSub}>WINS THE GAME!</Text>
+          </>
+        )}
+
+        {summaries && summaries.length > 0 ? (
+          <View style={styles.summaryTable}>
+            <Text style={styles.summaryHeader}>FINAL STANDINGS</Text>
+            {[...summaries].sort((a, b) => a.rank - b.rank).map((s) => (
+              <View key={s.playerId} style={[styles.summaryRow, s.bankrupt && styles.summaryRowBankrupt]}>
+                <Text style={styles.summaryRank}>{rankBadges[s.rank - 1] ?? `${s.rank}`}</Text>
+                <View style={[styles.summaryColorDot, { backgroundColor: s.color }]} />
+                <View style={styles.summaryInfo}>
+                  <Text style={[styles.summaryName, s.bankrupt && styles.summaryNameBankrupt]}>
+                    {s.token} {s.name}
+                  </Text>
+                  <Text style={styles.summarySub}>
+                    💵 ₹{s.cash.toLocaleString()}  🏠 ₹{s.propertyValue.toLocaleString()}
+                  </Text>
+                </View>
+                <Text style={[styles.summaryTotal, s.bankrupt && styles.summaryTotalBankrupt]}>
+                  {s.bankrupt ? '💀' : `₹${s.totalWorth.toLocaleString()}`}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : winner && (
+          <Text style={styles.gameOverMoney}>
+            ₹{(winner as any).money?.toLocaleString?.() ?? '—'}
+          </Text>
+        )}
+
+        <TouchableOpacity
+          style={styles.gameOverBtn}
+          onPress={() => useGameStore.getState().clearSession().then(() => router.replace('/'))}
+        >
+          <View style={styles.btnShine} />
+          <Text style={styles.gameOverBtnText}>Back to Lobby</Text>
+        </TouchableOpacity>
+      </ScrollView>
     </View>
   );
 }
@@ -641,4 +702,40 @@ const styles = StyleSheet.create({
     shadowColor: Colors.gold, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.5, shadowRadius: 14, elevation: 8,
   },
   gameOverBtnText: { color: Colors.bgDark, fontWeight: '800', fontSize: 15, letterSpacing: 2 },
+
+  // End game button
+  endGameRow: {
+    alignItems: 'center', paddingVertical: 10,
+    borderRadius: 10, borderWidth: 1,
+    borderColor: 'rgba(248,113,113,0.25)',
+    backgroundColor: 'rgba(248,113,113,0.07)',
+  },
+  endGameText: { color: Colors.danger, fontSize: 13, fontWeight: '600', letterSpacing: 0.5 },
+
+  // Game over leaderboard
+  gameOverScroll: {
+    alignItems: 'center', paddingVertical: 40, paddingHorizontal: 20, gap: 14,
+  },
+  summaryTable: {
+    width: '100%', maxWidth: 400, gap: 8, marginTop: 8,
+  },
+  summaryHeader: {
+    color: Colors.gold, fontSize: 11, letterSpacing: 3, fontWeight: '800',
+    textAlign: 'center', marginBottom: 4,
+  },
+  summaryRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 12, padding: 12, gap: 10,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+  },
+  summaryRowBankrupt: { opacity: 0.45 },
+  summaryRank: { fontSize: 22, width: 30, textAlign: 'center' },
+  summaryColorDot: { width: 10, height: 10, borderRadius: 5 },
+  summaryInfo: { flex: 1 },
+  summaryName: { color: Colors.textPrimary, fontSize: 14, fontWeight: '700' },
+  summaryNameBankrupt: { color: Colors.textMuted },
+  summarySub: { color: Colors.textSecondary, fontSize: 11, marginTop: 2 },
+  summaryTotal: { color: Colors.success, fontSize: 14, fontWeight: '800' },
+  summaryTotalBankrupt: { color: Colors.textMuted },
 });

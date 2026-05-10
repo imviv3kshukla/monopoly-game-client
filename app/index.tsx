@@ -93,6 +93,28 @@ export default function LobbyScreen() {
   const [loading, setLoading] = useState(false);
   const { setSession, setGameState } = useGameStore();
 
+  // On mount: attempt to rejoin an existing session (handles page refresh / app restart)
+  useEffect(() => {
+    async function checkSession() {
+      const session = await useGameStore.getState().loadSession();
+      if (!session) return;
+      try {
+        const res = await fetch(`${API}/rooms/${session.roomId}/rejoin/${session.playerId}`);
+        if (res.ok) {
+          const data = await res.json();
+          useGameStore.getState().setGameState(data.state);
+          connectToRoom(session.roomId, session.playerId);
+          router.replace(`/game/${session.roomId}`);
+        } else {
+          await useGameStore.getState().clearSession();
+        }
+      } catch {
+        await useGameStore.getState().clearSession();
+      }
+    }
+    checkSession();
+  }, []);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
   const titleScale = useRef(new Animated.Value(0.85)).current;

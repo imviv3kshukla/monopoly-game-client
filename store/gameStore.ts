@@ -1,10 +1,25 @@
-// store/gameStore.ts
-// Central state management using Zustand
-// Think of this as the "brain" of your app — all screens read from here
+// store/gameStore.ts — Central state management using Zustand
 
 import { create } from 'zustand';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+export interface PlayerSummary {
+  playerId: string;
+  name: string;
+  token: string;
+  color: string;
+  cash: number;
+  propertyValue: number;
+  buildingValue: number;
+  totalWorth: number;
+  propertiesOwned: number;
+  housesOwned: number;
+  hotelsOwned: number;
+  bankrupt: boolean;
+  rank: number;
+}
 
 export interface Player {
   id: string;
@@ -12,7 +27,7 @@ export interface Player {
   token: string;       // emoji
   color: string;       // hex
   money: number;
-  position: number;    // 0-39
+  position: number;    // 0-35
   inJail: boolean;
   jailTurns: number;
   bankrupt: boolean;
@@ -36,6 +51,8 @@ export interface GameState {
   pendingAction: 'BUY' | 'CARD' | null;
   pendingMessage: string | null;
   winnerId: string | null;
+  finalSummaries?: PlayerSummary[];
+  endReason?: 'BANKRUPTCY' | 'MANUAL';
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -45,6 +62,8 @@ interface Store {
   myPlayerId: string | null;
   myRoomId: string | null;
   setSession: (playerId: string, roomId: string) => void;
+  clearSession: () => Promise<void>;
+  loadSession: () => Promise<{ playerId: string; roomId: string } | null>;
 
   // Game state from server
   gameState: GameState | null;
@@ -60,7 +79,28 @@ export const useGameStore = create<Store>((set, get) => ({
   myPlayerId: null,
   myRoomId: null,
 
-  setSession: (playerId, roomId) => set({ myPlayerId: playerId, myRoomId: roomId }),
+  setSession: (playerId, roomId) => {
+    // Fire-and-forget — don't block the UI
+    AsyncStorage.setItem('myPlayerId', playerId);
+    AsyncStorage.setItem('myRoomId', roomId);
+    set({ myPlayerId: playerId, myRoomId: roomId });
+  },
+
+  clearSession: async () => {
+    await AsyncStorage.removeItem('myPlayerId');
+    await AsyncStorage.removeItem('myRoomId');
+    set({ myPlayerId: null, myRoomId: null, gameState: null });
+  },
+
+  loadSession: async () => {
+    const playerId = await AsyncStorage.getItem('myPlayerId');
+    const roomId = await AsyncStorage.getItem('myRoomId');
+    if (playerId && roomId) {
+      set({ myPlayerId: playerId, myRoomId: roomId });
+      return { playerId, roomId };
+    }
+    return null;
+  },
 
   gameState: null,
   setGameState: (state) => set({ gameState: state }),

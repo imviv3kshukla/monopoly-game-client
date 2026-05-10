@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Dimensions } from 'react-native';
 import { BOARD, getGridPos, getSide, BoardSpace } from '../constants/board';
-import { Colors, CITY_PHOTOS } from '../constants/theme';
+import { Colors, CITY_PHOTOS, TILE_ICONS } from '../constants/theme';
 import { Player, Property } from '../store/gameStore';
 
 const { width: screenW } = Dimensions.get('window');
@@ -203,10 +203,10 @@ function TileContent({ space, side }: { space: BoardSpace; side: string }) {
 
 function CornerContent({ space }: { space: BoardSpace }) {
   const config: Record<string, { icon: string; lines: string[] }> = {
-    go:          { icon: '🏁', lines: ['GO', '+₹2K'] },
-    jail:        { icon: '⛓️', lines: ['JAIL', 'Visiting'] },
-    freeparking: { icon: '🅿️', lines: ['FREE', 'PARK'] },
-    gotojail:    { icon: '🚔', lines: ['GO TO', 'JAIL!'] },
+    start:      { icon: '🏁', lines: ['START', '+₹1,500'] },
+    jail:       { icon: '⛓️', lines: ['JAIL', 'Visiting'] },
+    club:       { icon: '🎉', lines: ['CLUB', 'Pay₹1.5k'] },
+    rest_house: { icon: '🏨', lines: ['REST', 'HOUSE'] },
   };
   const c = config[space.type];
   if (!c) return null;
@@ -347,8 +347,8 @@ function getIcon(space: BoardSpace): string {
     case 'chance':    return '❓';
     case 'community': return '💌';
     case 'tax':       return '💸';
-    case 'railroad':  return '🚂';
-    case 'utility':   return space.id === 12 ? '⚡' : '💧';
+    case 'transport':
+    case 'utility':   return TILE_ICONS[space.name] || '';
     default:          return '';
   }
 }

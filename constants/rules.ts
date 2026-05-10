@@ -1,4 +1,4 @@
-// constants/rules.ts — All game rules text in one place
+// constants/rules.ts — All game rules for Little Business
 
 export interface RuleSection {
   id: string;
@@ -26,7 +26,7 @@ export const RULES: RuleSection[] = [
       'Roll both dice and move that many spaces forward.',
       'If you roll doubles, you get to roll again!',
       'If you roll doubles 3 times in a row → Go straight to Jail!',
-      'When you pass GO, collect ₹2,000 salary.',
+      'When you pass START, collect ₹1,500 salary.',
     ],
   },
   {
@@ -37,7 +37,7 @@ export const RULES: RuleSection[] = [
       'Land on an unowned property → choose to buy at the listed price.',
       'If you skip, the property stays available.',
       'Once you own all properties of one color, rent doubles even with no houses!',
-      'Build houses (₹500–₹2000 each) only after owning the full color set.',
+      'Build houses (₹2,000–₹7,500 each) only after owning the full color set.',
       'After 4 houses, the next purchase becomes a hotel.',
     ],
   },
@@ -48,7 +48,7 @@ export const RULES: RuleSection[] = [
     content: [
       'Land on opponent\'s property → pay them rent.',
       'Rent increases with every house/hotel built.',
-      'Railways: ₹2,000 (1 owned), ₹4,000 (2), ₹8,000 (3), ₹16,000 (all 4).',
+      'Transports: rent doubles for each transport owned (Roadways, Railways, Waterways, Airways).',
       'Utilities: 4× dice roll (1 owned), 10× dice roll (both owned).',
       'If you can\'t afford rent, you go bankrupt!',
     ],
@@ -58,10 +58,30 @@ export const RULES: RuleSection[] = [
     title: 'Jail',
     icon: '⛓️',
     content: [
-      'You go to Jail by: landing on "Go To Jail", drawing that card, or rolling 3 doubles.',
-      'In Jail, you cannot collect rent or move normally.',
+      'You go to Jail by drawing that card or rolling 3 doubles in a row.',
+      'In Jail, you cannot move normally.',
       'Escape options: Roll doubles on your turn (free!), or pay ₹500 bail.',
       'After 3 turns in Jail, you must pay ₹500 and move.',
+    ],
+  },
+  {
+    id: 'club',
+    title: 'CLUB',
+    icon: '🎉',
+    content: [
+      'Land on CLUB → pay ₹1,500 to the bank.',
+      'Think of it as the house cover charge — everyone pays!',
+      'Unlike the old "Free Parking", this corner is not free.',
+    ],
+  },
+  {
+    id: 'rest_house',
+    title: 'REST HOUSE',
+    icon: '🏨',
+    content: [
+      'REST HOUSE is a safe space — nothing happens here.',
+      'You don\'t pay rent or do anything special.',
+      'Take a breather and plan your next move!',
     ],
   },
   {
@@ -70,8 +90,8 @@ export const RULES: RuleSection[] = [
     icon: '❓',
     content: [
       'Land on "Chance" to draw a random card.',
-      'Could be good (₹500 dividend, advance to GO) or bad (pay tax, go to jail).',
-      'Examples: "Bank pays you ₹500", "Pay income tax ₹1,500", "Advance to Shimla".',
+      'Indian-themed events: Diwali Gift, GST Refund, Marriage Celebration, Yashwant Bond...',
+      'Could be good (₹500–₹10,000 bonus) or bad (pay tax, go to jail).',
       'You must immediately follow the card\'s instruction.',
     ],
   },
@@ -81,7 +101,7 @@ export const RULES: RuleSection[] = [
     icon: '💌',
     content: [
       'Similar to Chance, but generally more positive cards.',
-      'Examples: "Bank error in your favor +₹2,000", "Inherit ₹10,000".',
+      'Examples: "Bank error in your favor +₹2,000", "Life Insurance Maturity ₹10,000".',
       'Some negative: "School fees ₹1,500", "Doctor\'s fees ₹500".',
     ],
   },
@@ -91,18 +111,8 @@ export const RULES: RuleSection[] = [
     icon: '💸',
     content: [
       'Income Tax: Pay ₹2,000 to the bank.',
-      'Luxury Tax: Pay ₹1,000 to the bank.',
+      'Wealth Tax: Pay ₹1,500 to the bank.',
       'Taxes go to the bank, not to other players.',
-    ],
-  },
-  {
-    id: 'parking',
-    title: 'Free Parking',
-    icon: '🅿️',
-    content: [
-      'A safe space — nothing happens here.',
-      'You don\'t pay rent or do anything special.',
-      'Some house rules collect taxes here, but standard rules say it\'s just a rest stop.',
     ],
   },
   {

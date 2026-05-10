@@ -35,16 +35,12 @@ export const Colors = {
   warning: '#fbbf24',
   info: '#38bdf8',
 
-  // Property group colors — more saturated
+  // Property group colors (4 groups: red, yellow, green, blue)
   prop: {
-    brown: '#b45309',
-    lightblue: '#0891b2',
-    pink: '#db2777',
-    orange: '#ea580c',
-    red: '#dc2626',
+    red:    '#dc2626',
     yellow: '#ca8a04',
-    green: '#16a34a',
-    darkblue: '#1d4ed8',
+    green:  '#16a34a',
+    blue:   '#1d4ed8',
   },
 
   // Player token colors — vivid
@@ -53,28 +49,59 @@ export const Colors = {
 
 export const PLAYER_TOKENS = ['🔴', '🔵', '🟢', '🟡'];
 
+// Landmark icons for transport, utility, and city tiles
+export const TILE_ICONS: Record<string, string> = {
+  // Transports
+  Roadways:    '🚌',
+  Railways:    '🚂',
+  Waterways:   '🚢',
+  Airways:     '✈️',
+  // Utilities
+  Electricity: '💡',
+  Internet:    '🌐',
+  // Cities (landmark emoji)
+  Mumbai:      '🌅',
+  Delhi:       '🏛️',
+  Bangalore:   '🌆',
+  Chennai:     '🌊',
+  Pune:        '🏯',
+  Kolkata:     '🌉',
+  Ahmedabad:   '🕌',
+  Hyderabad:   '🕌',
+  Goa:         '🏖️',
+  Amritsar:    '🛕',
+  Jaipur:      '🏰',
+  Indore:      '🏛️',
+  Patna:       '🏛️',
+  Kanpur:      '🏭',
+  Agra:        '🕌',
+  Cochin:      '⛵',
+  Chandigarh:  '🌳',
+  Shimla:      '⛰️',
+  Ladakh:      '🏔️',
+  Darjeeling:  '🍃',
+};
+
 // City visual data — main landmark emoji + ambient scene elements for modal backdrop
 export const CITY_PHOTOS: Record<string, { emoji: string; landmark: string; scene: string[] }> = {
-  Pune:         { emoji: '🏛️', landmark: 'Shaniwar Wada',    scene: ['🌸','⚔️','🎓'] },
-  Bangalore:    { emoji: '🌆', landmark: 'Tech Capital',      scene: ['💻','🌺','🌃'] },
-  Chennai:      { emoji: '🌊', landmark: 'Marina Beach',      scene: ['🐚','🏖️','🌅'] },
-  Hyderabad:    { emoji: '🕌', landmark: 'Charminar',         scene: ['💎','🌙','🎭'] },
-  Kolkata:      { emoji: '🌉', landmark: 'Howrah Bridge',     scene: ['🎪','🌸','🎭'] },
-  Ahmedabad:    { emoji: '🏯', landmark: 'Sabarmati Ashram',  scene: ['🕊️','🌿','🏮'] },
-  Jaipur:       { emoji: '🏰', landmark: 'Hawa Mahal',        scene: ['🐪','🌅','💫'] },
-  Lucknow:      { emoji: '🕌', landmark: 'Bara Imambara',     scene: ['🌙','🌹','✨'] },
-  Surat:        { emoji: '💎', landmark: 'Diamond City',      scene: ['💍','⚡','🌟'] },
-  Kanpur:       { emoji: '🏭', landmark: 'Industrial Hub',    scene: ['⚙️','🔧','💪'] },
-  Nagpur:       { emoji: '🍊', landmark: 'Orange City',       scene: ['🌳','☀️','🏞️'] },
-  'Mumbai (W)': { emoji: '🌅', landmark: 'Marine Drive',      scene: ['🌊','🏙️','🌃'] },
-  'Mumbai (C)': { emoji: '🚉', landmark: 'CST Station',       scene: ['🎭','🌆','🗺️'] },
-  'Mumbai (E)': { emoji: '🏙️', landmark: 'Bandra',            scene: ['🌉','🌊','✨'] },
-  'Delhi (N)':  { emoji: '🏛️', landmark: 'Red Fort',          scene: ['🚩','🐘','🎆'] },
-  'Delhi (S)':  { emoji: '🏯', landmark: 'Qutub Minar',       scene: ['🌿','📜','🌙'] },
-  'Delhi (E)':  { emoji: '🚪', landmark: 'India Gate',         scene: ['🕯️','🌟','⚔️'] },
-  Mysore:       { emoji: '🏯', landmark: 'Mysore Palace',     scene: ['🐘','🌺','✨'] },
-  Bhopal:       { emoji: '🌊', landmark: 'Upper Lake',         scene: ['🦢','🌿','🌅'] },
-  Indore:       { emoji: '🏛️', landmark: 'Rajwada Palace',    scene: ['👑','🌸','⚜️'] },
-  Shimla:       { emoji: '⛰️', landmark: 'The Mall Road',     scene: ['❄️','🌲','🚂'] },
-  Manali:       { emoji: '🏔️', landmark: 'Solang Valley',     scene: ['❄️','🌨️','🦌'] },
+  Cochin:      { emoji: '⛵', landmark: 'Fort Kochi',          scene: ['🌊', '🏖️', '⚓'] },
+  Patna:       { emoji: '🏛️', landmark: 'Golghar',             scene: ['🌊', '📜', '🌿'] },
+  Indore:      { emoji: '🏛️', landmark: 'Rajwada Palace',      scene: ['👑', '🌸', '⚜️'] },
+  Pune:        { emoji: '🏛️', landmark: 'Shaniwar Wada',       scene: ['🌸', '⚔️', '🎓'] },
+  Kolkata:     { emoji: '🌉', landmark: 'Howrah Bridge',        scene: ['🎪', '🌸', '🎭'] },
+  Ahmedabad:   { emoji: '🕌', landmark: 'Sabarmati Ashram',     scene: ['🕊️', '🌿', '🏮'] },
+  Delhi:       { emoji: '🏛️', landmark: 'India Gate',           scene: ['🕯️', '🌟', '🚩'] },
+  Mumbai:      { emoji: '🌅', landmark: 'Marine Drive',         scene: ['🌊', '🏙️', '🌃'] },
+  Jaipur:      { emoji: '🏰', landmark: 'Hawa Mahal',           scene: ['🐪', '🌅', '💫'] },
+  Kanpur:      { emoji: '🏭', landmark: 'Industrial Hub',       scene: ['⚙️', '🔧', '💪'] },
+  Agra:        { emoji: '🕌', landmark: 'Taj Mahal',            scene: ['🌹', '🌙', '✨'] },
+  Chandigarh:  { emoji: '🌳', landmark: 'Rock Garden',          scene: ['🌺', '🦋', '💐'] },
+  Shimla:      { emoji: '⛰️', landmark: 'The Mall Road',        scene: ['❄️', '🌲', '🚂'] },
+  Ladakh:      { emoji: '🏔️', landmark: 'Pangong Lake',         scene: ['❄️', '🌨️', '🦅'] },
+  Darjeeling:  { emoji: '🍃', landmark: 'Tiger Hill',           scene: ['☁️', '🚂', '🌄'] },
+  Hyderabad:   { emoji: '🕌', landmark: 'Charminar',            scene: ['💎', '🌙', '🎭'] },
+  Goa:         { emoji: '🏖️', landmark: 'Baga Beach',           scene: ['🌴', '🌊', '🎵'] },
+  Amritsar:    { emoji: '🛕', landmark: 'Golden Temple',        scene: ['✨', '🌅', '🙏'] },
+  Bangalore:   { emoji: '🌆', landmark: 'Tech Capital',         scene: ['💻', '🌺', '🌃'] },
+  Chennai:     { emoji: '🌊', landmark: 'Marina Beach',         scene: ['🐚', '🏖️', '🌅'] },
 };

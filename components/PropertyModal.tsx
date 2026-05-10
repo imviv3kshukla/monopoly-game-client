@@ -86,11 +86,11 @@ export function PropertyModal({
 
             {/* Details */}
             {space.type === 'property'   && <PropertyDetails space={space} />}
-            {space.type === 'railroad'   && <RailroadDetails />}
-            {space.type === 'utility'    && <UtilityDetails />}
+            {space.type === 'transport'  && <TransportDetails space={space} />}
+            {space.type === 'utility'    && <UtilityDetails space={space} />}
             {space.type === 'tax'        && <TaxDetails space={space} />}
             {(space.type === 'chance' || space.type === 'community') && <CardDetails space={space} />}
-            {(['jail', 'gotojail', 'go', 'freeparking'] as const).includes(space.type as any) &&
+            {(['jail', 'club', 'start', 'rest_house'] as const).includes(space.type as any) &&
               <CornerDetails space={space} />}
 
             {/* Owner status */}
@@ -180,24 +180,26 @@ function PropertyDetails({ space }: { space: BoardSpace }) {
   );
 }
 
-function RailroadDetails() {
+function TransportDetails({ space }: { space: BoardSpace }) {
   return (
     <View style={styles.detailsSection}>
-      <DetailRow label="Price" value="₹2,000" highlight />
+      <DetailRow label="Price" value={`₹${space.price?.toLocaleString()}`} highlight />
       <View style={styles.divider} />
-      <Text style={styles.detailsTitle}>RENT (BY RAILWAYS OWNED)</Text>
-      <DetailRow label="🚂 1 Railway" value="₹2,000" />
-      <DetailRow label="🚂🚂 2 Railways" value="₹4,000" />
-      <DetailRow label="🚂🚂🚂 3 Railways" value="₹8,000" />
-      <DetailRow label="🚂🚂🚂🚂 All 4" value="₹16,000" />
+      <Text style={styles.detailsTitle}>RENT (BY TRANSPORTS OWNED)</Text>
+      <DetailRow label="1 Transport" value="₹1,500" />
+      <DetailRow label="2 Transports" value="₹3,000" />
+      <DetailRow label="3 Transports" value="₹6,000" />
+      <DetailRow label="All 4 Transports" value="₹12,000" />
+      <View style={styles.divider} />
+      <Text style={styles.note}>🚌 Roadways · 🚂 Railways · 🚢 Waterways · ✈️ Airways</Text>
     </View>
   );
 }
 
-function UtilityDetails() {
+function UtilityDetails({ space }: { space: BoardSpace }) {
   return (
     <View style={styles.detailsSection}>
-      <DetailRow label="Price" value="₹1,500" highlight />
+      <DetailRow label="Price" value={`₹${space.price?.toLocaleString()}`} highlight />
       <View style={styles.divider} />
       <Text style={styles.detailsTitle}>RENT</Text>
       <DetailRow label="1 utility owned" value="4× dice roll" />
@@ -214,7 +216,7 @@ function TaxDetails({ space }: { space: BoardSpace }) {
       <Text style={styles.note}>
         {space.name === 'Income Tax'
           ? 'Income tax goes directly to the bank.'
-          : 'A flat luxury tax. Goes to the bank.'}
+          : 'Wealth tax goes directly to the bank.'}
       </Text>
     </View>
   );
@@ -236,14 +238,14 @@ function CardDetails({ space }: { space: BoardSpace }) {
 
 function CornerDetails({ space }: { space: BoardSpace }) {
   const text: Record<string, string> = {
-    go:          'Pass GO and collect ₹2,000 salary every time!',
-    jail:        'Just visiting? No penalty! If sent here, roll doubles to escape or pay ₹500 bail.',
-    gotojail:    'Land here → Go directly to Jail! Do not pass GO, do not collect ₹2,000.',
-    freeparking: 'A safe haven — nothing happens here. Relax and plan your next move.',
+    start:      'Pass START and collect ₹1,500 salary every time!',
+    jail:       'Just visiting? No penalty! If sent here, roll doubles to escape or pay ₹500 bail.',
+    club:       'Land here → pay ₹1,500 to the bank. Everyone pays the house cover charge!',
+    rest_house: 'A safe haven — nothing happens here. REST HOUSE is a free space, relax!',
   };
   return (
     <View style={styles.detailsSection}>
-      <Text style={styles.note}>{text[space.type]}</Text>
+      <Text style={styles.note}>{text[space.type] ?? ''}</Text>
     </View>
   );
 }
@@ -261,24 +263,29 @@ function DetailRow({ label, value, highlight, subtle }: {
 
 function getSubtitle(space: BoardSpace): string {
   switch (space.type) {
-    case 'railroad': return 'Indian Railways';
-    case 'utility':  return space.id === 11 ? 'Power Distribution' : 'Water Supply';
-    default:         return '';
+    case 'transport': return 'Transport Network';
+    case 'utility':   return space.name === 'Electricity' ? 'Power Distribution' : 'Internet Provider';
+    case 'start':     return 'Collect ₹1,500 salary';
+    case 'club':      return 'Pay ₹1,500';
+    case 'rest_house':return 'Safe space — no action';
+    default:          return '';
   }
 }
 
 function getDefaultEmoji(space: BoardSpace): string {
   switch (space.type) {
-    case 'chance':    return '❓';
-    case 'community': return '💌';
-    case 'tax':       return '💸';
-    case 'railroad':  return '🚂';
-    case 'utility':   return space.id === 11 ? '⚡' : '💧';
-    case 'go':        return '🏁';
-    case 'jail':      return '⛓️';
-    case 'gotojail':  return '🚔';
-    case 'freeparking': return '🅿️';
-    default:          return '🏛️';
+    case 'chance':     return '❓';
+    case 'community':  return '💌';
+    case 'tax':        return '💸';
+    case 'transport':  return space.name === 'Roadways' ? '🚌'
+                            : space.name === 'Railways' ? '🚂'
+                            : space.name === 'Waterways' ? '🚢' : '✈️';
+    case 'utility':    return space.name === 'Electricity' ? '💡' : '🌐';
+    case 'start':      return '🏁';
+    case 'jail':       return '⛓️';
+    case 'club':       return '🎉';
+    case 'rest_house': return '🏨';
+    default:           return '🏛️';
   }
 }
 
