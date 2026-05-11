@@ -3,7 +3,7 @@
 import React, { useEffect, useRef } from 'react';
 import {
   View, Text, Modal, StyleSheet, TouchableOpacity,
-  Pressable, ScrollView, Platform, Animated, Easing,
+  Pressable, ScrollView, Platform, Animated, Easing, useWindowDimensions,
 } from 'react-native';
 import { Colors, CITY_PHOTOS } from '../constants/theme';
 import { BoardSpace } from '../constants/board';
@@ -30,7 +30,8 @@ export function PropertyModal({
   isOwnerMe, ownsColorSet, pendingBuy,
   onBuy, onSkipBuy, onBuild, onClose,
 }: Props) {
-  const isWeb = Platform.OS === 'web';
+  const { width } = useWindowDimensions();
+  const isWeb = Platform.OS === 'web' && width >= 760;
   const cardAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {

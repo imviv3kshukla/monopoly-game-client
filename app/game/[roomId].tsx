@@ -228,6 +228,7 @@ export default function GameScreen() {
       <Text style={styles.autoEndHintText}>⏱  Turn ending automatically...</Text>
     </View>
   ) : null;
+  const canRollNow = myTurn && !me?.bankrupt && !hasRolledThisTurn && gameState.pendingAction === null && !rolling;
 
   const board = (
     <Board
@@ -267,137 +268,45 @@ export default function GameScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* ── Top Bar ── */}
-      {!isWideLayout && <View style={styles.topBar}>
-        <TouchableOpacity onPress={() => router.replace('/')} style={styles.iconBtn}>
-          <Text style={styles.iconBtnText}>⌂</Text>
-        </TouchableOpacity>
-        <View style={styles.roomBadge}>
-          <Text style={styles.roomBadgeLabel}>ROOM</Text>
-          <Text style={styles.roomBadgeCode}>{roomId}</Text>
-        </View>
-        <TouchableOpacity onPress={() => router.push('/rules')} style={styles.iconBtn}>
-          <Text style={styles.iconBtnText}>📖</Text>
-        </TouchableOpacity>
-      </View>}
-
       {isWideLayout ? (
-        <View style={styles.webShell}>
-          <ScrollView
-            style={[styles.webSidebar, {
-              width: webSidebarWidth,
-              minWidth: webSidebarWidth,
-              maxWidth: webSidebarWidth,
-              flexBasis: webSidebarWidth,
-            }]}
-            contentContainerStyle={styles.webSidebarContent}
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.webBrandRow}>
-              <View style={styles.webLogo}>
-                <Text style={styles.webLogoText}>IB</Text>
-              </View>
-              <View style={styles.webBrandCopy}>
-                <Text style={styles.webTitle}>Indian Business</Text>
-                <Text style={styles.webSubtitle}>Property Trading Game</Text>
-              </View>
-            </View>
-
-            <View style={styles.webRoomRow}>
-              <TouchableOpacity onPress={() => router.replace('/')} style={styles.webSmallBtn}>
-                <Text style={styles.webSmallBtnText}>⌂</Text>
-              </TouchableOpacity>
-              <View style={styles.webRoomBadge}>
-                <Text style={styles.roomBadgeLabel}>ROOM</Text>
-                <Text style={styles.roomBadgeCode}>{roomId}</Text>
-              </View>
-              <TouchableOpacity onPress={() => router.push('/rules')} style={styles.webSmallBtn}>
-                <Text style={styles.webSmallBtnText}>📖</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.webPanel}>
-              <TurnBanner isMyTurn={myTurn} hasRolled={hasRolledThisTurn} current={current} />
-              <View style={styles.webDiceBox}>
-                <AnimatedDice values={gameState.lastDice} rolling={rolling} />
-              </View>
-              {controls}
-              {autoEndHint}
-            </View>
-
-            <View style={styles.webPanel}>
-              <View style={styles.webSectionHeader}>
-                <Text style={styles.webSectionTitle}>Players</Text>
-                <Text style={styles.webSectionMeta}>{gameState.players.length}/4</Text>
-              </View>
-              <View style={styles.webPlayersList}>{playerCards}</View>
-            </View>
-
-            <View style={styles.webPanel}>
-              <View style={styles.webSectionHeader}>
-                <Text style={styles.webSectionTitle}>Game History</Text>
-                <Text style={styles.webSectionMeta}>{gameState.log.length}</Text>
-              </View>
-              {gameLog}
-            </View>
-
-            {gameState.status === 'PLAYING' && (
-              <TouchableOpacity style={styles.endGameRow} onPress={handleEndGame}>
-                <Text style={styles.endGameText}>⛔  End Game</Text>
-              </TouchableOpacity>
-            )}
-          </ScrollView>
-
-          <ScrollView
-            style={styles.webBoardPane}
-            contentContainerStyle={[styles.webBoardContent, { padding: webBoardPadding }]}
-            showsVerticalScrollIndicator={false}
-          >
-            {webBoard}
-          </ScrollView>
-        </View>
+        <DesktopGameScene
+          roomId={roomId!}
+          board={webBoard}
+          gameState={gameState}
+          myPlayerId={myPlayerId!}
+          myTurn={myTurn}
+          hasRolled={hasRolledThisTurn}
+          rolling={rolling}
+          canRoll={canRollNow}
+          current={current}
+          latestLog={gameState.log[0] || 'Game started!'}
+          playerCards={playerCards}
+          gameLog={gameLog}
+          onRoll={handleRoll}
+          onRules={() => router.push('/rules')}
+          onHome={() => router.replace('/')}
+          onEndGame={handleEndGame}
+        />
       ) : (
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* ── Players ── */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.playersRow}>
-          {playerCards}
-        </ScrollView>
-
-        {/* ── Turn Banner ── */}
-        <TurnBanner isMyTurn={myTurn} hasRolled={hasRolledThisTurn} current={current} />
-
-        {/* ── Board ── */}
-        {board}
-
-        {/* ── Dice ── */}
-        <View style={styles.diceSection}>
-          <AnimatedDice values={gameState.lastDice} rolling={rolling} />
-        </View>
-
-        {/* ── Action Buttons ── (only shown before rolling) ── */}
-        {controls}
-
-        {/* ── Auto-end hint (after rolling) ── */}
-        {autoEndHint}
-
-        {/* ── End Game ── */}
-        {gameState.status === 'PLAYING' && (
-          <TouchableOpacity style={styles.endGameRow} onPress={handleEndGame}>
-            <Text style={styles.endGameText}>⛔  End Game</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* ── Log ── */}
-        <TouchableOpacity onPress={() => setShowLog(!showLog)} style={styles.logToggle} activeOpacity={0.8}>
-          <View style={styles.logDot} />
-          <Text style={styles.latestLog} numberOfLines={1}>{gameState.log[0] || 'Game started!'}</Text>
-          <Text style={styles.logChevron}>{showLog ? '▼' : '▲'}</Text>
-        </TouchableOpacity>
-
-        {showLog && (
-          gameLog
-        )}
-      </ScrollView>
+        <MobileGameScene
+          roomId={roomId!}
+          board={board}
+          gameState={gameState}
+          myPlayerId={myPlayerId!}
+          myTurn={myTurn}
+          hasRolled={hasRolledThisTurn}
+          rolling={rolling}
+          canRoll={canRollNow}
+          current={current}
+          latestLog={gameState.log[0] || 'Game started!'}
+          showLog={showLog}
+          onToggleLog={() => setShowLog(!showLog)}
+          gameLog={gameLog}
+          onRoll={handleRoll}
+          onRules={() => router.push('/rules')}
+          onHome={() => router.replace('/')}
+          onEndGame={handleEndGame}
+        />
       )}
 
       {/* ── Property Modal ── */}
@@ -490,6 +399,279 @@ function TurnBanner({ isMyTurn, hasRolled, current }: {
       <Text style={styles.turnBannerTextWait}>
         {current?.token}  {current?.name}'s turn...
       </Text>
+    </View>
+  );
+}
+
+function MobileGameScene({
+  roomId,
+  board,
+  gameState,
+  myPlayerId,
+  myTurn,
+  hasRolled,
+  rolling,
+  canRoll,
+  current,
+  latestLog,
+  showLog,
+  onToggleLog,
+  gameLog,
+  onRoll,
+  onRules,
+  onHome,
+  onEndGame,
+}: {
+  roomId: string;
+  board: React.ReactNode;
+  gameState: any;
+  myPlayerId: string;
+  myTurn: boolean;
+  hasRolled: boolean;
+  rolling: boolean;
+  canRoll: boolean;
+  current: any;
+  latestLog: string;
+  showLog: boolean;
+  onToggleLog: () => void;
+  gameLog: React.ReactNode;
+  onRoll: () => void;
+  onRules: () => void;
+  onHome: () => void;
+  onEndGame: () => void;
+}) {
+  const { width, height } = useWindowDimensions();
+  const boardScale = Math.min(1.08, Math.max(0.86, width / 390));
+  const actionWord = rolling ? 'ROLL!' : myTurn && !hasRolled ? 'ROLL!' : hasRolled ? 'MOVE!' : 'WAIT!';
+  const dockRaised = height < 740;
+
+  return (
+    <View style={styles.mobileScene}>
+      <View style={styles.mobileSkyGlow} pointerEvents="none" />
+      <View style={styles.mobilePark} pointerEvents="none">
+        <View style={styles.mobileParkOval} />
+        <View style={styles.mobileRoadOne} />
+        <View style={styles.mobileRoadTwo} />
+        <View style={styles.mobileBuildingA} />
+        <View style={styles.mobileBuildingB} />
+      </View>
+
+      <View style={styles.mobileTopHud}>
+        <TouchableOpacity onPress={onHome} style={styles.mobileIconBtn}>
+          <Text style={styles.mobileIconText}>⌂</Text>
+        </TouchableOpacity>
+        <View style={styles.mobileRoomPill}>
+          <Text style={styles.mobileRoomLabel}>ROOM</Text>
+          <Text style={styles.mobileRoomCode}>{roomId}</Text>
+        </View>
+        <TouchableOpacity onPress={onRules} style={styles.mobileIconBtn}>
+          <Text style={styles.mobileIconText}>📖</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.mobilePlayersDock}>
+        {gameState.players.slice(0, 4).map((player: any, index: number) => (
+          <MobilePlayerChip
+            key={player.id}
+            player={player}
+            isMe={player.id === myPlayerId}
+            isActive={index === gameState.currentPlayerIndex}
+          />
+        ))}
+      </View>
+
+      <View style={styles.mobileActionRibbon} pointerEvents="none">
+        <View style={styles.mobileRibbonWingLeft} />
+        <View style={styles.mobileRibbonMain}>
+          <Text style={styles.mobileRibbonText}>{actionWord}</Text>
+        </View>
+        <View style={styles.mobileRibbonWingRight} />
+      </View>
+
+      <View style={[styles.mobileBoardScene, { transform: [{ scale: boardScale }] }]}>
+        <View style={styles.mobileBoardShadow} />
+        <View style={styles.mobileBoardTilt}>{board}</View>
+      </View>
+
+      <View style={styles.mobileSparkles} pointerEvents="none">
+        <Text style={[styles.mobileSparkle, styles.mobileSparkleA]}>✦</Text>
+        <Text style={[styles.mobileSparkle, styles.mobileSparkleB]}>✧</Text>
+        <Text style={[styles.mobileSparkle, styles.mobileSparkleC]}>✦</Text>
+      </View>
+
+      <View style={[styles.mobileBottomDock, dockRaised && styles.mobileBottomDockCompact]}>
+        <View style={styles.mobileDiceFloat}>
+          <AnimatedDice values={gameState.lastDice} rolling={rolling} />
+        </View>
+        <View style={styles.mobileDockBar}>
+          <TouchableOpacity style={styles.mobileDockIconBtn} onPress={onToggleLog}>
+            <Text style={styles.mobileDockIconText}>📜</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.mobileGoButton, !canRoll && styles.mobileGoButtonDisabled]}
+            onPress={onRoll}
+            disabled={!canRoll}
+            activeOpacity={0.86}
+          >
+            <View style={styles.mobileGoShine} pointerEvents="none" />
+            <Text style={styles.mobileGoText}>GO</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.mobileDockIconBtn} onPress={onEndGame}>
+            <Text style={styles.mobileDockIconText}>⛔</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.mobileStatusLine}>
+          <Text style={styles.mobileStatusText} numberOfLines={1}>
+            {myTurn ? latestLog : `${current?.token ?? ''} ${current?.name ?? 'Opponent'} turn`}
+          </Text>
+        </View>
+        {showLog && <View style={styles.mobileLogSheet}>{gameLog}</View>}
+      </View>
+    </View>
+  );
+}
+
+function MobilePlayerChip({ player, isMe, isActive }: { player: any; isMe: boolean; isActive: boolean }) {
+  return (
+    <View style={[styles.mobilePlayerChip, isActive && { borderColor: player.color, shadowColor: player.color }]}>
+      <View style={[styles.mobilePlayerAvatar, { backgroundColor: player.color }]}>
+        <Text style={styles.mobilePlayerToken}>{player.token}</Text>
+      </View>
+      <View style={styles.mobilePlayerCopy}>
+        <Text style={styles.mobilePlayerName} numberOfLines={1}>{isMe ? 'You' : player.name}</Text>
+        <Text style={styles.mobilePlayerMoney} numberOfLines={1}>₹{player.money.toLocaleString()}</Text>
+      </View>
+      {isActive && <View style={styles.mobileTurnDot} />}
+    </View>
+  );
+}
+
+function DesktopGameScene({
+  roomId,
+  board,
+  gameState,
+  myPlayerId,
+  myTurn,
+  hasRolled,
+  rolling,
+  canRoll,
+  current,
+  latestLog,
+  playerCards,
+  gameLog,
+  onRoll,
+  onRules,
+  onHome,
+  onEndGame,
+}: {
+  roomId: string;
+  board: React.ReactNode;
+  gameState: any;
+  myPlayerId: string;
+  myTurn: boolean;
+  hasRolled: boolean;
+  rolling: boolean;
+  canRoll: boolean;
+  current: any;
+  latestLog: string;
+  playerCards: React.ReactNode;
+  gameLog: React.ReactNode;
+  onRoll: () => void;
+  onRules: () => void;
+  onHome: () => void;
+  onEndGame: () => void;
+}) {
+  const actionWord = rolling ? 'ROLL!' : myTurn && !hasRolled ? 'ROLL!' : hasRolled ? 'MOVE!' : 'WAIT!';
+
+  return (
+    <View style={styles.desktopScene}>
+      <View style={styles.desktopSkyGlow} pointerEvents="none" />
+      <View style={styles.desktopParkLayer} pointerEvents="none">
+        <View style={styles.desktopParkOval} />
+        <View style={styles.desktopRoadOne} />
+        <View style={styles.desktopRoadTwo} />
+        <View style={styles.desktopBuildingOne} />
+        <View style={styles.desktopBuildingTwo} />
+      </View>
+
+      <View style={styles.desktopTopHud}>
+        <TouchableOpacity onPress={onHome} style={styles.mobileIconBtn}>
+          <Text style={styles.mobileIconText}>⌂</Text>
+        </TouchableOpacity>
+        <View style={styles.desktopRoomPill}>
+          <Text style={styles.mobileRoomLabel}>ROOM</Text>
+          <Text style={styles.mobileRoomCode}>{roomId}</Text>
+        </View>
+        <TouchableOpacity onPress={onRules} style={styles.mobileIconBtn}>
+          <Text style={styles.mobileIconText}>📖</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.desktopActionRibbon} pointerEvents="none">
+        <View style={styles.mobileRibbonWingLeft} />
+        <View style={[styles.mobileRibbonMain, styles.desktopRibbonMain]}>
+          <Text style={styles.mobileRibbonText}>{actionWord}</Text>
+        </View>
+        <View style={styles.mobileRibbonWingRight} />
+      </View>
+
+      <View style={styles.desktopShell}>
+        <View style={styles.desktopBoardPane}>
+          <View style={styles.desktopBoardHalo} pointerEvents="none" />
+          <View style={styles.desktopBoardTilt}>{board}</View>
+          <View style={styles.desktopStatusLine}>
+            <Text style={styles.mobileStatusText} numberOfLines={1}>
+              {myTurn ? latestLog : `${current?.token ?? ''} ${current?.name ?? 'Opponent'} turn`}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.desktopFloatingControl}>
+          <View style={styles.webBrandRow}>
+            <View style={styles.webLogo}>
+              <Text style={styles.webLogoText}>IB</Text>
+            </View>
+            <View style={styles.webBrandCopy}>
+              <Text style={styles.webTitle}>Indian Business</Text>
+              <Text style={styles.webSubtitle}>Property Trading Game</Text>
+            </View>
+          </View>
+          <View style={styles.desktopCompactDice}>
+            <AnimatedDice values={gameState.lastDice} rolling={rolling} />
+          </View>
+          <TouchableOpacity
+            style={[styles.desktopGoButton, !canRoll && styles.desktopGoButtonDisabled]}
+            onPress={onRoll}
+            disabled={!canRoll}
+          >
+            <View style={styles.mobileGoShine} pointerEvents="none" />
+            <Text style={styles.desktopGoText}>GO</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.desktopPlayersStrip}>
+          {gameState.players.slice(0, 4).map((player: any, index: number) => (
+            <MobilePlayerChip
+              key={player.id}
+              player={player}
+              isMe={player.id === myPlayerId}
+              isActive={index === gameState.currentPlayerIndex}
+            />
+          ))}
+        </View>
+
+        <View style={styles.desktopHistoryCard}>
+          <View style={styles.webSectionHeader}>
+            <Text style={styles.webSectionTitle}>Game History</Text>
+            <Text style={styles.webSectionMeta}>{gameState.log.length}</Text>
+          </View>
+          {gameLog}
+        </View>
+
+        <TouchableOpacity style={styles.desktopEndButton} onPress={onEndGame}>
+          <Text style={styles.endGameText}>⛔  End Game</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -735,6 +917,632 @@ function EndGameConfirmModal({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bgDark },
   scroll: { paddingHorizontal: 12, paddingBottom: 50, gap: 14 },
+
+  mobileScene: {
+    flex: 1,
+    backgroundColor: '#7ed957',
+    overflow: 'hidden',
+  },
+  mobileSkyGlow: {
+    position: 'absolute',
+    top: -130,
+    left: -60,
+    right: -60,
+    height: 330,
+    borderBottomLeftRadius: 220,
+    borderBottomRightRadius: 220,
+    backgroundColor: 'rgba(125,211,252,0.58)',
+  },
+  mobilePark: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+  },
+  mobileParkOval: {
+    position: 'absolute',
+    top: 96,
+    left: -80,
+    width: 520,
+    height: 430,
+    borderRadius: 230,
+    backgroundColor: '#8bd850',
+  },
+  mobileRoadOne: {
+    position: 'absolute',
+    top: 118,
+    left: -80,
+    width: 620,
+    height: 46,
+    borderRadius: 24,
+    backgroundColor: 'rgba(236,253,245,0.58)',
+    transform: [{ rotate: '-24deg' }],
+  },
+  mobileRoadTwo: {
+    position: 'absolute',
+    bottom: 138,
+    left: -92,
+    width: 620,
+    height: 54,
+    borderRadius: 28,
+    backgroundColor: 'rgba(209,250,229,0.46)',
+    transform: [{ rotate: '21deg' }],
+  },
+  mobileBuildingA: {
+    position: 'absolute',
+    right: -34,
+    bottom: 86,
+    width: 132,
+    height: 116,
+    borderRadius: 18,
+    backgroundColor: '#f97316',
+    opacity: 0.65,
+    transform: [{ rotate: '-8deg' }],
+  },
+  mobileBuildingB: {
+    position: 'absolute',
+    left: -32,
+    bottom: 186,
+    width: 112,
+    height: 94,
+    borderRadius: 16,
+    backgroundColor: '#38bdf8',
+    opacity: 0.62,
+    transform: [{ rotate: '10deg' }],
+  },
+  mobileTopHud: {
+    position: 'absolute',
+    top: 10,
+    left: 14,
+    right: 14,
+    zIndex: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  mobileIconBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(7,5,16,0.82)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  mobileIconText: { fontSize: 18 },
+  mobileRoomPill: {
+    minWidth: 116,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 18,
+    alignItems: 'center',
+    backgroundColor: 'rgba(7,5,16,0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+  },
+  mobileRoomLabel: { color: 'rgba(255,255,255,0.54)', fontSize: 8, letterSpacing: 2.5, fontWeight: '800' },
+  mobileRoomCode: { color: '#fff7ed', fontSize: 15, fontWeight: '900', letterSpacing: 3 },
+  mobilePlayersDock: {
+    position: 'absolute',
+    top: 62,
+    left: 10,
+    right: 10,
+    zIndex: 35,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  mobilePlayerChip: {
+    minWidth: 112,
+    maxWidth: 156,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 7,
+    paddingLeft: 7,
+    paddingRight: 10,
+    borderRadius: 18,
+    backgroundColor: 'rgba(7,5,16,0.82)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.14)',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.7,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  mobilePlayerAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.5)',
+  },
+  mobilePlayerToken: { fontSize: 18 },
+  mobilePlayerCopy: { flex: 1, minWidth: 0 },
+  mobilePlayerName: { color: '#fff', fontSize: 12, fontWeight: '900' },
+  mobilePlayerMoney: { color: Colors.goldLight, fontSize: 12, fontWeight: '900', marginTop: 1 },
+  mobileTurnDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.success,
+    shadowColor: Colors.success,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 8,
+  },
+  mobileActionRibbon: {
+    position: 'absolute',
+    top: 126,
+    left: 24,
+    right: 24,
+    height: 76,
+    zIndex: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mobileRibbonMain: {
+    minWidth: 210,
+    height: 58,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ef2b14',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.32)',
+    transform: [{ rotate: '-2deg' }],
+    shadowColor: '#7f1d1d',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 14,
+  },
+  mobileRibbonWingLeft: {
+    position: 'absolute',
+    left: 22,
+    bottom: 9,
+    width: 92,
+    height: 34,
+    borderRadius: 6,
+    backgroundColor: '#b91c1c',
+    transform: [{ rotate: '-14deg' }],
+  },
+  mobileRibbonWingRight: {
+    position: 'absolute',
+    right: 22,
+    bottom: 9,
+    width: 92,
+    height: 34,
+    borderRadius: 6,
+    backgroundColor: '#b91c1c',
+    transform: [{ rotate: '14deg' }],
+  },
+  mobileRibbonText: {
+    color: '#fff',
+    fontSize: 34,
+    fontWeight: '900',
+    letterSpacing: 1,
+    textShadowColor: '#7f1d1d',
+    textShadowOffset: { width: 2, height: 3 },
+    textShadowRadius: 0,
+  },
+  mobileBoardScene: {
+    position: 'absolute',
+    left: -4,
+    right: -4,
+    top: 154,
+    zIndex: 10,
+    alignItems: 'center',
+  },
+  mobileBoardShadow: {
+    position: 'absolute',
+    top: 90,
+    width: 360,
+    height: 420,
+    borderRadius: 180,
+    backgroundColor: 'rgba(15,23,42,0.34)',
+    transform: [{ scaleX: 1.14 }],
+  },
+  mobileBoardTilt: {
+    transform: [
+      { perspective: 900 },
+      { rotateX: '48deg' },
+      { rotateZ: '-7deg' },
+      { translateY: -36 },
+    ],
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.34,
+    shadowRadius: 24,
+    elevation: 18,
+  },
+  mobileSparkles: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 24,
+  },
+  mobileSparkle: {
+    position: 'absolute',
+    color: '#fff7ad',
+    fontSize: 24,
+    textShadowColor: '#fff',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 12,
+  },
+  mobileSparkleA: { top: 230, left: 42 },
+  mobileSparkleB: { top: 290, right: 36 },
+  mobileSparkleC: { bottom: 210, left: 74 },
+  mobileBottomDock: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 50,
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingBottom: 18,
+  },
+  mobileBottomDockCompact: { paddingBottom: 10 },
+  mobileDiceFloat: {
+    marginBottom: -20,
+    transform: [{ scale: 0.72 }],
+    zIndex: 2,
+  },
+  mobileDockBar: {
+    width: '100%',
+    minHeight: 86,
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    backgroundColor: '#fff7d6',
+    borderWidth: 2,
+    borderColor: 'rgba(245,158,11,0.72)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingTop: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 18,
+  },
+  mobileDockIconBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff3b0',
+    borderWidth: 1,
+    borderColor: 'rgba(161,98,7,0.22)',
+  },
+  mobileDockIconText: { fontSize: 21 },
+  mobileGoButton: {
+    width: 104,
+    height: 78,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ef3b22',
+    borderWidth: 4,
+    borderColor: '#fff9c2',
+    transform: [{ rotate: '-2deg' }],
+    shadowColor: '#991b1b',
+    shadowOffset: { width: 0, height: 9 },
+    shadowOpacity: 0.45,
+    shadowRadius: 11,
+    elevation: 20,
+    overflow: 'hidden',
+  },
+  mobileGoButtonDisabled: {
+    backgroundColor: '#bda06b',
+    opacity: 0.72,
+  },
+  mobileGoShine: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '45%',
+    backgroundColor: 'rgba(255,255,255,0.24)',
+  },
+  mobileGoText: {
+    color: '#fff',
+    fontSize: 34,
+    fontWeight: '900',
+    letterSpacing: 1,
+    textShadowColor: '#7f1d1d',
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 0,
+  },
+  mobileStatusLine: {
+    width: '92%',
+    marginTop: 8,
+    borderRadius: 15,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    backgroundColor: 'rgba(7,5,16,0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  mobileStatusText: {
+    color: Colors.goldPale,
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  mobileLogSheet: {
+    width: '100%',
+    maxHeight: 190,
+    marginTop: 8,
+  },
+
+  desktopScene: {
+    flex: 1,
+    backgroundColor: '#84d85a',
+    overflow: 'hidden',
+  },
+  desktopSkyGlow: {
+    position: 'absolute',
+    top: -220,
+    left: -120,
+    right: -120,
+    height: 520,
+    borderBottomLeftRadius: 420,
+    borderBottomRightRadius: 420,
+    backgroundColor: 'rgba(125,211,252,0.55)',
+  },
+  desktopParkLayer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+  },
+  desktopParkOval: {
+    position: 'absolute',
+    left: 280,
+    top: 90,
+    width: 760,
+    height: 560,
+    borderRadius: 300,
+    backgroundColor: '#9be25f',
+  },
+  desktopRoadOne: {
+    position: 'absolute',
+    top: 120,
+    left: -80,
+    width: 1200,
+    height: 74,
+    borderRadius: 40,
+    backgroundColor: 'rgba(236,253,245,0.55)',
+    transform: [{ rotate: '-18deg' }],
+  },
+  desktopRoadTwo: {
+    position: 'absolute',
+    bottom: 98,
+    left: 180,
+    width: 1100,
+    height: 78,
+    borderRadius: 42,
+    backgroundColor: 'rgba(220,252,231,0.44)',
+    transform: [{ rotate: '13deg' }],
+  },
+  desktopBuildingOne: {
+    position: 'absolute',
+    right: 70,
+    bottom: 82,
+    width: 190,
+    height: 148,
+    borderRadius: 24,
+    backgroundColor: '#f97316',
+    opacity: 0.62,
+    transform: [{ rotate: '-7deg' }],
+  },
+  desktopBuildingTwo: {
+    position: 'absolute',
+    left: 430,
+    top: 42,
+    width: 150,
+    height: 110,
+    borderRadius: 22,
+    backgroundColor: '#38bdf8',
+    opacity: 0.48,
+    transform: [{ rotate: '8deg' }],
+  },
+  desktopTopHud: {
+    position: 'absolute',
+    top: 18,
+    left: 24,
+    right: 24,
+    zIndex: 50,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  desktopRoomPill: {
+    minWidth: 150,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignItems: 'center',
+    backgroundColor: 'rgba(7,5,16,0.8)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+  },
+  desktopActionRibbon: {
+    position: 'absolute',
+    top: 76,
+    left: '44%',
+    width: 330,
+    height: 86,
+    zIndex: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  desktopRibbonMain: {
+    minWidth: 250,
+    height: 64,
+  },
+  desktopShell: {
+    flex: 1,
+    paddingTop: 72,
+    paddingLeft: 18,
+    paddingRight: 18,
+    paddingBottom: 18,
+  },
+  desktopSidePanel: {
+    width: 360,
+    flexShrink: 0,
+    borderRadius: 24,
+    backgroundColor: 'rgba(7,5,16,0.84)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+  },
+  desktopSideContent: {
+    padding: 18,
+    gap: 14,
+    paddingBottom: 22,
+  },
+  desktopTurnPanel: {
+    borderRadius: 18,
+    padding: 14,
+    gap: 12,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  desktopGoButton: {
+    alignSelf: 'center',
+    width: 120,
+    height: 82,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ef3b22',
+    borderWidth: 4,
+    borderColor: '#fff9c2',
+    shadowColor: '#991b1b',
+    shadowOffset: { width: 0, height: 9 },
+    shadowOpacity: 0.45,
+    shadowRadius: 11,
+    elevation: 18,
+    overflow: 'hidden',
+  },
+  desktopGoButtonDisabled: {
+    backgroundColor: '#bda06b',
+    opacity: 0.72,
+  },
+  desktopGoText: {
+    color: '#fff',
+    fontSize: 34,
+    fontWeight: '900',
+    letterSpacing: 1,
+    textShadowColor: '#7f1d1d',
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 0,
+  },
+  desktopBoardPane: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  desktopBoardHalo: {
+    position: 'absolute',
+    width: 920,
+    height: 620,
+    borderRadius: 280,
+    backgroundColor: 'rgba(15,23,42,0.24)',
+    transform: [{ scaleX: 1.22 }],
+  },
+  desktopBoardTilt: {
+    marginTop: 70,
+    transform: [
+      { perspective: 1100 },
+      { rotateX: '40deg' },
+      { rotateZ: '-5deg' },
+      { translateY: -28 },
+    ],
+  },
+  desktopStatusLine: {
+    position: 'absolute',
+    left: '12%',
+    right: '12%',
+    bottom: 18,
+    borderRadius: 18,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    backgroundColor: 'rgba(7,5,16,0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  desktopFloatingControl: {
+    position: 'absolute',
+    top: 88,
+    left: 22,
+    width: 300,
+    borderRadius: 22,
+    padding: 14,
+    gap: 12,
+    alignItems: 'center',
+    backgroundColor: 'rgba(7,5,16,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+  },
+  desktopCompactDice: {
+    width: '100%',
+    borderRadius: 16,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    transform: [{ scale: 0.82 }],
+  },
+  desktopPlayersStrip: {
+    position: 'absolute',
+    top: 92,
+    right: 22,
+    maxWidth: 460,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  desktopHistoryCard: {
+    position: 'absolute',
+    left: 22,
+    bottom: 22,
+    width: 360,
+    maxHeight: 210,
+    borderRadius: 18,
+    padding: 12,
+    gap: 10,
+    backgroundColor: 'rgba(7,5,16,0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  desktopEndButton: {
+    position: 'absolute',
+    right: 22,
+    bottom: 22,
+    width: 160,
+    alignItems: 'center',
+    paddingVertical: 11,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(248,113,113,0.32)',
+    backgroundColor: 'rgba(7,5,16,0.76)',
+  },
 
   webShell: {
     flex: 1,
