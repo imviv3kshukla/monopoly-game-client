@@ -25,5 +25,13 @@ function normalizeBoardSpace(space: BackendBoardSpace): BoardSpace {
     type: space.type.toLowerCase() as BoardSpace['type'],
     color: space.color ?? undefined,
     rent: space.rent ?? undefined,
+    rentByHouses: space.rentByHouses ?? undefined,
+    partnerName: space.partnerName ?? undefined,
+    rentAlone: space.rentAlone ?? undefined,
+    rentWithPartner: space.rentWithPartner ?? undefined,
+    diceMultiplierAlone: space.diceMultiplierAlone ?? undefined,
+    diceMultiplierBoth: space.diceMultiplierBoth ?? undefined,
+    displayNote: space.displayNote ?? undefined,
+    imageKey: space.imageKey ?? undefined,
   };
 }

@@ -28,6 +28,7 @@ export default function GameScreen() {
   const [rolling, setRolling] = useState(false);
   const [showLog, setShowLog] = useState(false);
   const [showCardModal, setShowCardModal] = useState<string | null>(null);
+  const [showEndGameConfirm, setShowEndGameConfirm] = useState(false);
   // Track whether the local player has already rolled this turn
   const [hasRolledThisTurn, setHasRolledThisTurn] = useState(false);
 
@@ -144,6 +145,11 @@ export default function GameScreen() {
   };
 
   const handleEndGame = () => {
+    if (Platform.OS === 'web') {
+      setShowEndGameConfirm(true);
+      return;
+    }
+
     Alert.alert(
       'End Game',
       'Are you sure? This will end the game and compute final scores for all players.',
@@ -425,6 +431,15 @@ export default function GameScreen() {
       {/* ── Card Drawn Modal ── */}
       <CardDrawnModal text={showCardModal} />
 
+      <EndGameConfirmModal
+        visible={showEndGameConfirm}
+        onCancel={() => setShowEndGameConfirm(false)}
+        onConfirm={() => {
+          setShowEndGameConfirm(false);
+          sendEndGame(roomId!, myPlayerId!);
+        }}
+      />
+
       {/* ── Game Over ── */}
       <GameOverModal />
     </SafeAreaView>
@@ -614,17 +629,19 @@ function CardDrawnModal({ text }: { text: string | null }) {
 
 function GameOverModal() {
   const { gameState } = useGameStore();
-  if (!gameState || gameState.status !== 'FINISHED') return null;
-
   const pulse = useRef(new Animated.Value(0.8)).current;
+
   useEffect(() => {
+    if (!gameState || gameState.status !== 'FINISHED') return;
     Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, { toValue: 1.12, duration: 800, useNativeDriver: true }),
         Animated.timing(pulse, { toValue: 0.95, duration: 800, useNativeDriver: true }),
       ])
     ).start();
-  }, []);
+  }, [gameState?.status, pulse]);
+
+  if (!gameState || gameState.status !== 'FINISHED') return null;
 
   const summaries = gameState.finalSummaries;
   const rankBadges = ['🥇', '🥈', '🥉', '4️⃣'];
@@ -680,6 +697,38 @@ function GameOverModal() {
         </TouchableOpacity>
       </ScrollView>
     </View>
+  );
+}
+
+function EndGameConfirmModal({
+  visible,
+  onCancel,
+  onConfirm,
+}: {
+  visible: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={styles.confirmOverlay}>
+        <View style={styles.confirmCard}>
+          <Text style={styles.confirmEyebrow}>END GAME</Text>
+          <Text style={styles.confirmTitle}>Finish this game?</Text>
+          <Text style={styles.confirmMessage}>
+            Final scores will be computed for all players and the winner will be shown.
+          </Text>
+          <View style={styles.confirmActions}>
+            <TouchableOpacity style={[styles.confirmBtn, styles.confirmCancelBtn]} onPress={onCancel}>
+              <Text style={styles.confirmCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.confirmBtn, styles.confirmEndBtn]} onPress={onConfirm}>
+              <Text style={styles.confirmEndText}>End Game</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -966,6 +1015,78 @@ const styles = StyleSheet.create({
   cardModalTitle: { fontSize: 18, fontWeight: '900', letterSpacing: 3, marginTop: 10 },
   cardModalDivider: { width: 70, height: 3, marginVertical: 14, borderRadius: 2 },
   cardModalText: { fontSize: 16, color: '#1c1917', textAlign: 'center', lineHeight: 26, fontWeight: '500' },
+
+  // Confirmation modal
+  confirmOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(6,4,21,0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  confirmCard: {
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: 16,
+    padding: 22,
+    gap: 12,
+    backgroundColor: Colors.bgPanel,
+    borderWidth: 1,
+    borderColor: 'rgba(248,113,113,0.35)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.45,
+    shadowRadius: 28,
+    elevation: 18,
+  },
+  confirmEyebrow: {
+    color: Colors.danger,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 2.5,
+  },
+  confirmTitle: {
+    color: Colors.textPrimary,
+    fontSize: 24,
+    fontWeight: '900',
+  },
+  confirmMessage: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  confirmActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+  },
+  confirmBtn: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmCancelBtn: {
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  confirmEndBtn: {
+    backgroundColor: Colors.danger,
+  },
+  confirmCancelText: {
+    color: Colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  confirmEndText: {
+    color: Colors.bgDark,
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
 
   // Game over
   gameOverOverlay: {

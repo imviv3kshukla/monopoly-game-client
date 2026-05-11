@@ -10,8 +10,8 @@ const { width: screenW } = Dimensions.get('window');
 const BOARD_SIZE = Math.min(screenW - 16, 720);
 const CORNER = BOARD_SIZE * 0.13;
 const SIDE = (BOARD_SIZE - CORNER * 2) / 8; // 8 non-corner tiles per side
-const TOKEN_WIDTH = 28;
-const TOKEN_HEIGHT = 34;
+const TOKEN_WIDTH = 15;
+const TOKEN_HEIGHT = 20;
 
 interface Props {
   spaces: BoardSpace[];
@@ -280,7 +280,6 @@ function SmoothPawnToken({ player, position, slot }: { player: Player; position:
         },
       ]}
     >
-      <View style={[styles.pawnHalo, { backgroundColor: player.color }]} />
       <View style={[styles.pawnCrown, { backgroundColor: player.color }]}>
         <View style={styles.pawnCrownShine} />
       </View>
@@ -291,6 +290,7 @@ function SmoothPawnToken({ player, position, slot }: { player: Player; position:
       <View style={[styles.pawnNeck, { backgroundColor: player.color }]} />
       <View style={[styles.pawnBody, { backgroundColor: player.color }]} />
       <View style={[styles.pawnBase, { backgroundColor: player.color }]} />
+      <View style={[styles.pawnHalo, { backgroundColor: player.color }]} />
       <View style={styles.pawnFootShadow} />
     </Animated.View>
   );
@@ -384,10 +384,10 @@ function getPawnTarget(position: number, slot: number): { x: number; y: number }
 
 function getPawnOffset(slot: number): { x: number; y: number } {
   const offsets = [
-    { x: -8, y: -7 },
-    { x: 8, y: -7 },
-    { x: -8, y: 8 },
-    { x: 8, y: 8 },
+    { x: -7, y: -6 },
+    { x: 7, y: -6 },
+    { x: -7, y: 7 },
+    { x: 7, y: 7 },
   ];
   return offsets[slot % offsets.length];
 }
@@ -476,15 +476,15 @@ const styles = StyleSheet.create({
   },
   pawnHalo: {
     position: 'absolute',
-    bottom: -2,
-    width: 30,
-    height: 10,
-    borderRadius: 15,
-    opacity: 0.16,
+    bottom: -1,
+    width: 17,
+    height: 6,
+    borderRadius: 10,
+    opacity: 0.14,
   },
   pawnCrown: {
-    width: 9,
-    height: 5,
+    width: 6,
+    height: 3,
     borderTopLeftRadius: 5,
     borderTopRightRadius: 5,
     borderBottomLeftRadius: 3,
@@ -505,9 +505,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.42)',
   },
   pawnHead: {
-    width: 17,
-    height: 17,
-    borderRadius: 8.5,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
     overflow: 'hidden',
     borderWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.62)',
@@ -520,9 +520,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 2,
     left: 2,
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
     backgroundColor: 'rgba(255,255,255,0.82)',
   },
   pawnInnerGlow: {
@@ -530,21 +530,21 @@ const styles = StyleSheet.create({
     left: 3,
     right: 3,
     bottom: 2,
-    height: 5,
+    height: 4,
     borderRadius: 5,
     backgroundColor: 'rgba(255,255,255,0.12)',
   },
   pawnNeck: {
-    width: 8,
-    height: 5,
+    width: 5,
+    height: 3,
     borderLeftWidth: 1,
     borderRightWidth: 1,
     borderColor: 'rgba(0,0,0,0.22)',
     marginTop: -1,
   },
   pawnBody: {
-    width: 19,
-    height: 10,
+    width: 12,
+    height: 6,
     borderTopLeftRadius: 9,
     borderTopRightRadius: 9,
     borderBottomLeftRadius: 6,
@@ -559,9 +559,9 @@ const styles = StyleSheet.create({
     borderRightColor: 'rgba(0,0,0,0.2)',
   },
   pawnBase: {
-    width: 28,
-    height: 7,
-    borderRadius: 8,
+    width: 15,
+    height: 4,
+    borderRadius: 6,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.38)',
     borderBottomWidth: 2,
@@ -570,8 +570,8 @@ const styles = StyleSheet.create({
   pawnFootShadow: {
     position: 'absolute',
     bottom: -2,
-    width: 24,
-    height: 5,
+    width: 15,
+    height: 3,
     borderRadius: 10,
     backgroundColor: 'rgba(0,0,0,0.22)',
     zIndex: -1,

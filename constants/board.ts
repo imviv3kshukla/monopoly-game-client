@@ -8,9 +8,17 @@ export interface BoardSpace {
   color?: string;
   price?: number;
   rent?: number[];
+  rentByHouses?: number[];
   houseCost?: number;
   taxAmount?: number;
   mortgageValue?: number;
+  partnerName?: string;
+  rentAlone?: number;
+  rentWithPartner?: number;
+  diceMultiplierAlone?: number;
+  diceMultiplierBoth?: number;
+  displayNote?: string;
+  imageKey?: string;
 }
 
 // Grid position [row, col] in a 10x10 grid.
