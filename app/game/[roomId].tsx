@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Animated, Modal, Alert, useWindowDimensions, Platform,
+  Animated, Modal, Alert, useWindowDimensions, Platform, PanResponder,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
@@ -21,13 +21,20 @@ import { Colors } from '../../constants/theme';
 import { BoardSpace } from '../../constants/board';
 import { fetchBoardSpaces } from '../../services/board';
 
+type CardReveal = {
+  type: 'CHANCE' | 'COMMUNITY';
+  text: string;
+  raw: string;
+  playerName?: string;
+};
+
 export default function GameScreen() {
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
   const { gameState, myPlayerId, isMyTurn, currentPlayer, myPlayer, boardSpaces, setBoardSpaces } = useGameStore();
   const [selectedSpace, setSelectedSpace] = useState<BoardSpace | null>(null);
   const [rolling, setRolling] = useState(false);
   const [showLog, setShowLog] = useState(false);
-  const [showCardModal, setShowCardModal] = useState<string | null>(null);
+  const [showCardModal, setShowCardModal] = useState<CardReveal | null>(null);
   const [showEndGameConfirm, setShowEndGameConfirm] = useState(false);
   // Track whether the local player has already rolled this turn
   const [hasRolledThisTurn, setHasRolledThisTurn] = useState(false);
@@ -82,16 +89,21 @@ export default function GameScreen() {
     if (autoEndTimer.current) { clearTimeout(autoEndTimer.current); autoEndTimer.current = null; }
   }, [gameState?.currentPlayerIndex]);
 
-  // Show chance/community card popup immediately from log
+  const lastShownCardRef = useRef<string | null>(null);
+
+  // Show chance/community card popup when a drawn card appears in the server log.
   useEffect(() => {
-    if (gameState?.log[0]) {
-      const latest = gameState.log[0];
-      if (latest.startsWith('Chance:') || latest.startsWith('Community:')) {
-        setShowCardModal(latest);
-        setTimeout(() => setShowCardModal(null), 3500);
-      }
-    }
-  }, [gameState?.log[0]]);
+    const reveal = getCardReveal(gameState);
+    if (!reveal) return;
+
+    const key = `${reveal.type}:${reveal.raw}`;
+    if (lastShownCardRef.current === key) return;
+    lastShownCardRef.current = key;
+
+    setShowCardModal(reveal);
+    const timeout = setTimeout(() => setShowCardModal(null), 5200);
+    return () => clearTimeout(timeout);
+  }, [gameState?.log[0], gameState?.pendingMessage]);
 
   // Stop dice rolling animation after server responds
   useEffect(() => {
@@ -238,10 +250,14 @@ export default function GameScreen() {
       onTilePress={setSelectedSpace}
       onMoveComplete={handleMoveComplete}
       rolling={rolling}
+      focusedPlayerId={current?.id ?? myPlayerId}
+      cinematicCamera={true}
     />
   );
   const fullBoardSize = 732;
-  const webBoardScale = Math.min(1, Math.max(0.46, (width - webSidebarWidth - webBoardPadding * 2) / fullBoardSize));
+  const webBoardScale = isWideLayout
+    ? Math.min(0.76, Math.max(0.58, (width - 520) / fullBoardSize))
+    : Math.min(1, Math.max(0.46, (width - webSidebarWidth - webBoardPadding * 2) / fullBoardSize));
   const webBoard = (
     <View style={[styles.webBoardScaleBox, {
       width: fullBoardSize * webBoardScale,
@@ -281,7 +297,6 @@ export default function GameScreen() {
           current={current}
           latestLog={gameState.log[0] || 'Game started!'}
           playerCards={playerCards}
-          gameLog={gameLog}
           onRoll={handleRoll}
           onRules={() => router.push('/rules')}
           onHome={() => router.replace('/')}
@@ -338,7 +353,7 @@ export default function GameScreen() {
       />
 
       {/* ── Card Drawn Modal ── */}
-      <CardDrawnModal text={showCardModal} />
+      <CardDrawnModal card={showCardModal} onClose={() => setShowCardModal(null)} />
 
       <EndGameConfirmModal
         visible={showEndGameConfirm}
@@ -558,7 +573,6 @@ function DesktopGameScene({
   current,
   latestLog,
   playerCards,
-  gameLog,
   onRoll,
   onRules,
   onHome,
@@ -575,13 +589,66 @@ function DesktopGameScene({
   current: any;
   latestLog: string;
   playerCards: React.ReactNode;
-  gameLog: React.ReactNode;
   onRoll: () => void;
   onRules: () => void;
   onHome: () => void;
   onEndGame: () => void;
 }) {
   const actionWord = rolling ? 'ROLL!' : myTurn && !hasRolled ? 'ROLL!' : hasRolled ? 'MOVE!' : 'WAIT!';
+  const [inspectView, setInspectView] = useState(false);
+  const viewAnim = useRef(new Animated.Value(0)).current;
+  const historyPan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const historyPanRef = useRef({ x: 0, y: 0 });
+  const historyPanResponder = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 4 || Math.abs(gesture.dy) > 4,
+    onPanResponderGrant: () => {
+      historyPan.stopAnimation((value) => {
+        historyPanRef.current = value;
+        historyPan.setOffset(value);
+        historyPan.setValue({ x: 0, y: 0 });
+      });
+    },
+    onPanResponderMove: Animated.event([null, { dx: historyPan.x, dy: historyPan.y }], {
+      useNativeDriver: false,
+    }),
+    onPanResponderRelease: (_, gesture) => {
+      const next = {
+        x: Math.max(-20, Math.min(760, historyPanRef.current.x + gesture.dx)),
+        y: Math.max(-520, Math.min(80, historyPanRef.current.y + gesture.dy)),
+      };
+      historyPan.flattenOffset();
+      historyPanRef.current = next;
+      Animated.spring(historyPan, {
+        toValue: next,
+        friction: 8,
+        tension: 70,
+        useNativeDriver: true,
+      }).start();
+    },
+  })).current;
+
+  useEffect(() => {
+    Animated.spring(viewAnim, {
+      toValue: inspectView ? 1 : 0,
+      friction: 8,
+      tension: 70,
+      useNativeDriver: true,
+    }).start();
+  }, [inspectView, viewAnim]);
+
+  const boardRotateX = viewAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['27deg', '12deg'],
+  });
+  const boardScale = viewAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0.94],
+  });
+  const boardLift = viewAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-6, -26],
+  });
 
   return (
     <View style={styles.desktopScene}>
@@ -617,8 +684,22 @@ function DesktopGameScene({
 
       <View style={styles.desktopShell}>
         <View style={styles.desktopBoardPane}>
-          <View style={styles.desktopBoardHalo} pointerEvents="none" />
-          <View style={styles.desktopBoardTilt}>{board}</View>
+          <Animated.View
+            style={[
+              styles.desktopBoardTilt,
+              {
+                transform: [
+                  { perspective: 1100 },
+                  { rotateX: boardRotateX },
+                  { rotateZ: '-3deg' },
+                  { translateY: boardLift },
+                  { scale: boardScale },
+                ],
+              },
+            ]}
+          >
+            {board}
+          </Animated.View>
           <View style={styles.desktopStatusLine}>
             <Text style={styles.mobileStatusText} numberOfLines={1}>
               {myTurn ? latestLog : `${current?.token ?? ''} ${current?.name ?? 'Opponent'} turn`}
@@ -647,6 +728,9 @@ function DesktopGameScene({
             <View style={styles.mobileGoShine} pointerEvents="none" />
             <Text style={styles.desktopGoText}>GO</Text>
           </TouchableOpacity>
+          <TouchableOpacity style={styles.desktopViewButton} onPress={() => setInspectView(v => !v)}>
+            <Text style={styles.desktopViewButtonText}>{inspectView ? 'CINEMATIC VIEW' : 'READ TILE VIEW'}</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.desktopPlayersStrip}>
@@ -660,13 +744,20 @@ function DesktopGameScene({
           ))}
         </View>
 
-        <View style={styles.desktopHistoryCard}>
-          <View style={styles.webSectionHeader}>
+        <Animated.View style={[styles.desktopHistoryCard, { transform: historyPan.getTranslateTransform() }]}>
+          <View style={styles.desktopHistoryHandle} {...historyPanResponder.panHandlers}>
             <Text style={styles.webSectionTitle}>Game History</Text>
             <Text style={styles.webSectionMeta}>{gameState.log.length}</Text>
           </View>
-          {gameLog}
-        </View>
+          <ScrollView style={styles.desktopHistoryScroll} showsVerticalScrollIndicator>
+            {gameState.log.slice(0, 30).map((line: string, i: number) => (
+              <View key={i} style={styles.logLineRow}>
+                <View style={[styles.logBullet, i === 0 && styles.logBulletActive]} />
+                <Text style={[styles.logLine, i === 0 && styles.logLineLatest]}>{line}</Text>
+              </View>
+            ))}
+          </ScrollView>
+        </Animated.View>
 
         <TouchableOpacity style={styles.desktopEndButton} onPress={onEndGame}>
           <Text style={styles.endGameText}>⛔  End Game</Text>
@@ -690,6 +781,8 @@ function LoadingScreen() {
   }, []);
   return (
     <View style={styles.loadingContainer}>
+      <View style={styles.waitingCloudA} />
+      <View style={styles.waitingCloudB} />
       <Animated.Text style={[styles.loadingTitle, { opacity: pulse }]}>BUSINESS</Animated.Text>
       <Text style={styles.loadingText}>Connecting to game...</Text>
     </View>
@@ -711,35 +804,56 @@ function WaitingRoom({ roomId, state, myPlayerId }: any) {
   }, []);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.waitingRoot} edges={['top', 'bottom']}>
       <Stack.Screen options={{ headerShown: false }} />
+      <View style={styles.waitingSky} pointerEvents="none">
+        <View style={styles.waitingSunbeamA} />
+        <View style={styles.waitingSunbeamB} />
+        <View style={styles.waitingCloudA} />
+        <View style={styles.waitingCloudB} />
+        <View style={styles.waitingCloudC} />
+        <View style={styles.waitingBottomCloud} />
+      </View>
       <ScrollView contentContainerStyle={styles.waitingScroll} showsVerticalScrollIndicator={false}>
-        <Text style={styles.waitingEyebrow}>WAITING ROOM</Text>
-        <Text style={styles.waitingTitle}>BUSINESS</Text>
-
-        <View style={styles.codeBox}>
-          <Text style={styles.codeBoxLabel}>SHARE THIS CODE</Text>
-          <Text style={styles.codeBoxCode}>{roomId}</Text>
-          <Text style={styles.codeBoxHint}>Friends can join with this code</Text>
+        <View style={styles.waitingHero}>
+          <Text style={styles.waitingTitle}>BUSINESS</Text>
+          <Text style={styles.waitingTitleShadow}>BUSINESS</Text>
+          <View style={styles.waitingBoardMini}>
+            <View style={[styles.waitingMiniTile, styles.waitingMiniTileA]} />
+            <View style={[styles.waitingMiniTile, styles.waitingMiniTileB]} />
+            <View style={[styles.waitingMiniTile, styles.waitingMiniTileC]} />
+            <View style={styles.waitingMiniDice}>
+              <View style={styles.waitingMiniDotA} />
+              <View style={styles.waitingMiniDotB} />
+              <View style={styles.waitingMiniDotC} />
+            </View>
+          </View>
         </View>
 
-        <Text style={styles.waitingPlayersHeader}>PLAYERS ({state.players.length}/4)</Text>
+        <View style={styles.codeBox}>
+          <Text style={styles.codeBoxLabel}>ROOM CODE</Text>
+          <Text style={styles.codeBoxCode}>{roomId}</Text>
+          <Text style={styles.codeBoxHint}>Share this with friends</Text>
+        </View>
+
+        <Text style={styles.waitingPlayersHeader}>PLAYERS {state.players.length}/4</Text>
         <View style={styles.waitingPlayers}>
           {state.players.map((p: any, i: number) => (
             <View key={p.id} style={[styles.waitingPlayer, { borderColor: p.color + '60' }]}>
-              <View style={[styles.waitingPlayerColorDot, { backgroundColor: p.color }]} />
-              <Text style={styles.waitingPlayerToken}>{p.token}</Text>
+              <View style={[styles.waitingPlayerAvatar, { backgroundColor: p.color }]}>
+                <Text style={styles.waitingPlayerToken}>{p.token}</Text>
+              </View>
               <Text style={[styles.waitingPlayerName, { color: p.color }]}>
                 {p.name}{p.id === myPlayerId && '  (You)'}{i === 0 && '  👑'}
               </Text>
-              <View style={[styles.readyBadge, { backgroundColor: p.color + '25' }]}>
-                <Text style={[styles.readyText, { color: p.color }]}>READY</Text>
+              <View style={[styles.readyBadge, { backgroundColor: p.color }]}>
+                <Text style={styles.readyText}>READY</Text>
               </View>
             </View>
           ))}
           {Array.from({ length: 4 - state.players.length }).map((_, i) => (
             <Animated.View key={`empty${i}`} style={[styles.waitingPlayerEmpty, { opacity: dotAnim }]}>
-              <Text style={styles.waitingEmptyText}>⏳  Waiting for player...</Text>
+              <Text style={styles.waitingEmptyText}>Waiting for player...</Text>
             </Animated.View>
           ))}
         </View>
@@ -789,21 +903,165 @@ function ActionButton({ label, variant, onPress, disabled }: {
   );
 }
 
-function CardDrawnModal({ text }: { text: string | null }) {
-  if (!text) return null;
-  const isChance = text.startsWith('Chance:');
-  const cleanText = text.replace(/^(Chance|Community):\s*/, '');
+function getCardReveal(gameState: any): CardReveal | null {
+  if (!gameState) return null;
+
+  if (gameState.pendingAction === 'CARD' && gameState.pendingMessage) {
+    const current = gameState.players?.[gameState.currentPlayerIndex];
+    const recentLanding = findRecentCardLanding(gameState.log ?? []);
+    return {
+      type: recentLanding?.type ?? 'CHANCE',
+      text: cleanCardText(gameState.pendingMessage, current?.name),
+      raw: gameState.pendingMessage,
+      playerName: current?.name,
+    };
+  }
+
+  const logs: string[] = gameState.log ?? [];
+  const recentLanding = findRecentCardLanding(logs);
+  if (!recentLanding || recentLanding.index !== 1) return null;
+
+  const raw = logs[0];
+  if (!raw || isNonCardLog(raw)) return null;
+
+  return {
+    type: recentLanding.type,
+    text: cleanCardText(raw, recentLanding.playerName),
+    raw,
+    playerName: recentLanding.playerName,
+  };
+}
+
+function findRecentCardLanding(logs: string[]): { type: 'CHANCE' | 'COMMUNITY'; index: number; playerName?: string } | null {
+  const maxLookback = Math.min(logs.length, 4);
+  for (let i = 0; i < maxLookback; i++) {
+    const line = logs[i] ?? '';
+    const chance = line.match(/^(.*?) landed on Chance\b/i);
+    if (chance) return { type: 'CHANCE', index: i, playerName: chance[1]?.trim() };
+    const community = line.match(/^(.*?) landed on Community Chest\b/i);
+    if (community) return { type: 'COMMUNITY', index: i, playerName: community[1]?.trim() };
+  }
+  return null;
+}
+
+function cleanCardText(raw: string, playerName?: string): string {
+  let text = raw.replace(/^(Chance|Community)( Chest)?:\s*/i, '').trim();
+  if (playerName) {
+    text = text.replace(new RegExp(`^${escapeRegExp(playerName)}\\s*:?\\s*`, 'i'), '').trim();
+  }
+  return text.replace(/\s+/g, ' ');
+}
+
+function isNonCardLog(line: string): boolean {
+  return /^Buy\b| rolled | landed on | bought | built | joined the game|Game started|turn|passed START/i.test(line);
+}
+
+function getCardAction(text: string): { ribbon: string; label: string; amount?: string } {
+  const amountMatch = text.match(/₹\s?[\d,]+/);
+  const amount = amountMatch?.[0].replace(/\s/g, '');
+  if (/collect|refund|pays you|dividend|interest|bonus|maturity|matured|birthday/i.test(text)) {
+    return { ribbon: 'WIN!', label: 'COLLECT', amount };
+  }
+  if (/pay|fees|premium|repair|loss|tax|club/i.test(text)) {
+    return { ribbon: 'PAY!', label: 'PAY', amount };
+  }
+  if (/jail|club|advance|start/i.test(text)) {
+    return { ribbon: 'MOVE!', label: 'MOVE' };
+  }
+  return { ribbon: 'CARD!', label: 'DRAW' };
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function CardDrawnModal({ card, onClose }: { card: CardReveal | null; onClose: () => void }) {
+  const popAnim = useRef(new Animated.Value(0.86)).current;
+  const glowAnim = useRef(new Animated.Value(0.25)).current;
+
+  useEffect(() => {
+    if (!card) return;
+    popAnim.setValue(0.86);
+    glowAnim.setValue(0.25);
+    Animated.parallel([
+      Animated.spring(popAnim, {
+        toValue: 1,
+        friction: 6,
+        tension: 90,
+        useNativeDriver: true,
+      }),
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(glowAnim, { toValue: 0.9, duration: 900, useNativeDriver: true }),
+          Animated.timing(glowAnim, { toValue: 0.35, duration: 900, useNativeDriver: true }),
+        ])
+      ),
+    ]).start();
+  }, [card, glowAnim, popAnim]);
+
+  if (!card) return null;
+
+  const isChance = card.type === 'CHANCE';
+  const accent = isChance ? '#facc15' : '#38bdf8';
+  const darkAccent = isChance ? '#d97706' : '#0369a1';
+  const action = getCardAction(card.text);
+
   return (
-    <Modal visible transparent animationType="fade">
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.cardModalOverlay}>
-        <View style={[styles.cardModal, { borderColor: isChance ? '#f59e0b' : '#7c3aed' }]}>
-          <Text style={styles.cardModalIcon}>{isChance ? '❓' : '💌'}</Text>
-          <Text style={[styles.cardModalTitle, { color: isChance ? '#92400e' : '#4c1d95' }]}>
-            {isChance ? 'CHANCE' : 'COMMUNITY CHEST'}
-          </Text>
-          <View style={[styles.cardModalDivider, { backgroundColor: isChance ? '#f59e0b' : '#7c3aed' }]} />
-          <Text style={styles.cardModalText}>{cleanText}</Text>
+        <View style={styles.cardModalBackdropBoard} pointerEvents="none" />
+        <View style={styles.cardModalSparkles} pointerEvents="none">
+          <Text style={[styles.cardModalSparkle, styles.cardModalSparkleA]}>✦</Text>
+          <Text style={[styles.cardModalSparkle, styles.cardModalSparkleB]}>✧</Text>
+          <Text style={[styles.cardModalSparkle, styles.cardModalSparkleC]}>✦</Text>
         </View>
+
+        <View style={styles.cardRibbon} pointerEvents="none">
+          <View style={styles.cardRibbonWingLeft} />
+          <View style={styles.cardRibbonMain}>
+            <Text style={styles.cardRibbonText}>{action.ribbon}</Text>
+          </View>
+          <View style={styles.cardRibbonWingRight} />
+        </View>
+
+        <Animated.View
+          style={[
+            styles.cardModal,
+            {
+              borderColor: accent,
+              shadowColor: accent,
+              transform: [{ scale: popAnim }],
+            },
+          ]}
+        >
+          <Animated.View style={[styles.cardModalGlow, { opacity: glowAnim, backgroundColor: accent }]} />
+          <View style={[styles.cardModalHeader, { backgroundColor: isChance ? '#fff7ed' : '#e0f2fe' }]}>
+            <Text style={[styles.cardModalTitle, { color: darkAccent }]}>
+              {isChance ? 'CHANCE' : 'COMMUNITY CHEST'}
+            </Text>
+          </View>
+
+          <View style={styles.cardModalBody}>
+            <View style={[styles.cardMascot, { backgroundColor: isChance ? '#fef3c7' : '#dbeafe' }]}>
+              <Text style={styles.cardMascotHat}>{isChance ? '🎩' : '💌'}</Text>
+              <Text style={styles.cardMascotFace}>{isChance ? '💰' : '🏦'}</Text>
+            </View>
+            <View style={styles.cardModalCopy}>
+              <Text style={[styles.cardActionLabel, { color: darkAccent }]}>{action.label}</Text>
+              {action.amount ? (
+                <Text style={[styles.cardActionAmount, { color: darkAccent }]}>{action.amount}</Text>
+              ) : null}
+              <Text style={styles.cardModalText}>{card.text}</Text>
+              {card.playerName ? (
+                <Text style={styles.cardModalPlayer}>Drawn by {card.playerName}</Text>
+              ) : null}
+            </View>
+          </View>
+        </Animated.View>
+
+        <TouchableOpacity style={styles.cardModalClose} onPress={onClose} activeOpacity={0.85}>
+          <Text style={styles.cardModalCloseText}>OK</Text>
+        </TouchableOpacity>
       </View>
     </Modal>
   );
@@ -922,6 +1180,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#7ed957',
     overflow: 'hidden',
+    userSelect: 'none' as any,
   },
   mobileSkyGlow: {
     position: 'absolute',
@@ -941,55 +1200,19 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
   mobileParkOval: {
-    position: 'absolute',
-    top: 96,
-    left: -80,
-    width: 520,
-    height: 430,
-    borderRadius: 230,
-    backgroundColor: '#8bd850',
+    display: 'none',
   },
   mobileRoadOne: {
-    position: 'absolute',
-    top: 118,
-    left: -80,
-    width: 620,
-    height: 46,
-    borderRadius: 24,
-    backgroundColor: 'rgba(236,253,245,0.58)',
-    transform: [{ rotate: '-24deg' }],
+    display: 'none',
   },
   mobileRoadTwo: {
-    position: 'absolute',
-    bottom: 138,
-    left: -92,
-    width: 620,
-    height: 54,
-    borderRadius: 28,
-    backgroundColor: 'rgba(209,250,229,0.46)',
-    transform: [{ rotate: '21deg' }],
+    display: 'none',
   },
   mobileBuildingA: {
-    position: 'absolute',
-    right: -34,
-    bottom: 86,
-    width: 132,
-    height: 116,
-    borderRadius: 18,
-    backgroundColor: '#f97316',
-    opacity: 0.65,
-    transform: [{ rotate: '-8deg' }],
+    display: 'none',
   },
   mobileBuildingB: {
-    position: 'absolute',
-    left: -32,
-    bottom: 186,
-    width: 112,
-    height: 94,
-    borderRadius: 16,
-    backgroundColor: '#38bdf8',
-    opacity: 0.62,
-    transform: [{ rotate: '10deg' }],
+    display: 'none',
   },
   mobileTopHud: {
     position: 'absolute',
@@ -1292,6 +1515,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#84d85a',
     overflow: 'hidden',
+    userSelect: 'none' as any,
   },
   desktopSkyGlow: {
     position: 'absolute',
@@ -1311,55 +1535,19 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
   desktopParkOval: {
-    position: 'absolute',
-    left: 280,
-    top: 90,
-    width: 760,
-    height: 560,
-    borderRadius: 300,
-    backgroundColor: '#9be25f',
+    display: 'none',
   },
   desktopRoadOne: {
-    position: 'absolute',
-    top: 120,
-    left: -80,
-    width: 1200,
-    height: 74,
-    borderRadius: 40,
-    backgroundColor: 'rgba(236,253,245,0.55)',
-    transform: [{ rotate: '-18deg' }],
+    display: 'none',
   },
   desktopRoadTwo: {
-    position: 'absolute',
-    bottom: 98,
-    left: 180,
-    width: 1100,
-    height: 78,
-    borderRadius: 42,
-    backgroundColor: 'rgba(220,252,231,0.44)',
-    transform: [{ rotate: '13deg' }],
+    display: 'none',
   },
   desktopBuildingOne: {
-    position: 'absolute',
-    right: 70,
-    bottom: 82,
-    width: 190,
-    height: 148,
-    borderRadius: 24,
-    backgroundColor: '#f97316',
-    opacity: 0.62,
-    transform: [{ rotate: '-7deg' }],
+    display: 'none',
   },
   desktopBuildingTwo: {
-    position: 'absolute',
-    left: 430,
-    top: 42,
-    width: 150,
-    height: 110,
-    borderRadius: 22,
-    backgroundColor: '#38bdf8',
-    opacity: 0.48,
-    transform: [{ rotate: '8deg' }],
+    display: 'none',
   },
   desktopTopHud: {
     position: 'absolute',
@@ -1383,7 +1571,7 @@ const styles = StyleSheet.create({
   },
   desktopActionRibbon: {
     position: 'absolute',
-    top: 76,
+    top: 70,
     left: '44%',
     width: 330,
     height: 86,
@@ -1392,15 +1580,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   desktopRibbonMain: {
-    minWidth: 250,
-    height: 64,
+    minWidth: 232,
+    height: 58,
   },
   desktopShell: {
     flex: 1,
-    paddingTop: 72,
+    paddingTop: 92,
     paddingLeft: 18,
     paddingRight: 18,
-    paddingBottom: 18,
+    paddingBottom: 82,
   },
   desktopSidePanel: {
     width: 360,
@@ -1460,37 +1648,33 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   desktopBoardHalo: {
-    position: 'absolute',
-    width: 920,
-    height: 620,
-    borderRadius: 280,
-    backgroundColor: 'rgba(15,23,42,0.24)',
-    transform: [{ scaleX: 1.22 }],
+    display: 'none',
   },
   desktopBoardTilt: {
-    marginTop: 70,
-    transform: [
-      { perspective: 1100 },
-      { rotateX: '40deg' },
-      { rotateZ: '-5deg' },
-      { translateY: -28 },
-    ],
+    marginTop: 22,
   },
   desktopStatusLine: {
     position: 'absolute',
-    left: '12%',
-    right: '12%',
-    bottom: 18,
-    borderRadius: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 11,
-    backgroundColor: 'rgba(7,5,16,0.82)',
+    left: '50%',
+    bottom: 68,
+    width: 560,
+    maxWidth: '44%',
+    borderRadius: 20,
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: 'rgba(7,5,16,0.86)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.34,
+    shadowRadius: 12,
+    transform: [{ translateX: -280 }],
   },
   desktopFloatingControl: {
     position: 'absolute',
-    top: 88,
+    top: 96,
     left: 22,
     width: 300,
     borderRadius: 22,
@@ -1508,6 +1692,21 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.07)',
     transform: [{ scale: 0.82 }],
   },
+  desktopViewButton: {
+    width: '100%',
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,247,237,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+  },
+  desktopViewButtonText: {
+    color: Colors.goldLight,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
   desktopPlayersStrip: {
     position: 'absolute',
     top: 92,
@@ -1521,20 +1720,31 @@ const styles = StyleSheet.create({
   desktopHistoryCard: {
     position: 'absolute',
     left: 22,
-    bottom: 22,
-    width: 360,
-    maxHeight: 210,
+    bottom: 18,
+    width: 380,
+    maxHeight: 250,
     borderRadius: 18,
     padding: 12,
     gap: 10,
     backgroundColor: 'rgba(7,5,16,0.78)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
+    overflow: 'hidden',
+  },
+  desktopHistoryHandle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 8,
+    cursor: 'grab' as any,
+  },
+  desktopHistoryScroll: {
+    maxHeight: 188,
   },
   desktopEndButton: {
     position: 'absolute',
     right: 22,
-    bottom: 22,
+    bottom: 18,
     width: 160,
     alignItems: 'center',
     paddingVertical: 11,
@@ -1677,9 +1887,24 @@ const styles = StyleSheet.create({
     gap: 10,
   },
 
-  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bgDark, gap: 14 },
-  loadingTitle: { color: Colors.goldLight, fontSize: 40, fontWeight: '900', letterSpacing: 8 },
-  loadingText: { color: Colors.textSecondary, fontSize: 14 },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1687ff',
+    gap: 10,
+    overflow: 'hidden',
+  },
+  loadingTitle: {
+    color: '#fff',
+    fontSize: 44,
+    fontWeight: '900',
+    letterSpacing: 0,
+    textShadowColor: '#7e22ce',
+    textShadowOffset: { width: 0, height: 7 },
+    textShadowRadius: 0,
+  },
+  loadingText: { color: '#dbeafe', fontSize: 14, fontWeight: '800' },
 
   topBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -1768,61 +1993,434 @@ const styles = StyleSheet.create({
   logLineLatest: { color: Colors.goldLight, fontWeight: '700' },
 
   // Waiting room
-  waitingScroll: { flexGrow: 1, padding: 22, alignItems: 'center', justifyContent: 'center', gap: 18, paddingVertical: 44 },
-  waitingEyebrow: { color: Colors.gold, fontSize: 11, letterSpacing: 5, fontWeight: '700' },
+  waitingRoot: { flex: 1, backgroundColor: '#1687ff' },
+  waitingSky: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: '#1687ff',
+  },
+  waitingSunbeamA: {
+    position: 'absolute',
+    top: -60,
+    right: 58,
+    width: 30,
+    height: 240,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    transform: [{ rotate: '28deg' }],
+  },
+  waitingSunbeamB: {
+    position: 'absolute',
+    top: -72,
+    right: 112,
+    width: 20,
+    height: 210,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    transform: [{ rotate: '28deg' }],
+  },
+  waitingCloudA: {
+    position: 'absolute',
+    top: 48,
+    left: 26,
+    width: 142,
+    height: 54,
+    borderRadius: 32,
+    backgroundColor: '#fff',
+    shadowColor: '#bfdbfe',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 0,
+  },
+  waitingCloudB: {
+    position: 'absolute',
+    top: 82,
+    right: -28,
+    width: 138,
+    height: 54,
+    borderRadius: 32,
+    backgroundColor: '#fff',
+    shadowColor: '#bfdbfe',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 0,
+  },
+  waitingCloudC: {
+    position: 'absolute',
+    top: 308,
+    left: -20,
+    width: 126,
+    height: 52,
+    borderRadius: 32,
+    backgroundColor: '#fff',
+    shadowColor: '#bfdbfe',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.45,
+    shadowRadius: 0,
+  },
+  waitingBottomCloud: {
+    position: 'absolute',
+    left: -60,
+    right: -60,
+    bottom: -58,
+    height: 122,
+    borderRadius: 80,
+    backgroundColor: 'rgba(219,234,254,0.86)',
+  },
+  waitingScroll: {
+    flexGrow: 1,
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+    paddingVertical: 28,
+  },
+  waitingHero: {
+    alignItems: 'center',
+    minHeight: 170,
+    justifyContent: 'center',
+  },
   waitingTitle: {
-    color: Colors.goldLight, fontSize: 44, fontWeight: '900', letterSpacing: 8,
-    textShadowColor: Colors.gold, textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 18,
+    zIndex: 2,
+    color: '#fff',
+    fontSize: 50,
+    lineHeight: 56,
+    fontWeight: '900',
+    letterSpacing: 0,
+    textShadowColor: '#7e22ce',
+    textShadowOffset: { width: 0, height: 8 },
+    textShadowRadius: 0,
   },
+  waitingTitleShadow: {
+    position: 'absolute',
+    top: 52,
+    color: '#d946ef',
+    fontSize: 50,
+    lineHeight: 56,
+    fontWeight: '900',
+    letterSpacing: 0,
+  },
+  waitingBoardMini: {
+    width: 174,
+    height: 92,
+    marginTop: 8,
+    borderRadius: 10,
+    backgroundColor: '#e0f2fe',
+    borderWidth: 4,
+    borderColor: '#fff',
+    transform: [{ perspective: 600 }, { rotateX: '56deg' }, { rotateZ: '-5deg' }],
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+  },
+  waitingMiniTile: {
+    position: 'absolute',
+    width: 46,
+    height: 32,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  waitingMiniTileA: { left: 14, bottom: 12, backgroundColor: '#22c55e' },
+  waitingMiniTileB: { right: 16, bottom: 12, backgroundColor: '#ef4444' },
+  waitingMiniTileC: { left: 64, top: 14, backgroundColor: '#facc15' },
+  waitingMiniDice: {
+    position: 'absolute',
+    right: 56,
+    bottom: -18,
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: '#fde047',
+    borderWidth: 3,
+    borderColor: '#fff7ad',
+  },
+  waitingMiniDotA: { position: 'absolute', left: 9, top: 9, width: 7, height: 7, borderRadius: 4, backgroundColor: '#1f2937' },
+  waitingMiniDotB: { position: 'absolute', right: 9, top: 9, width: 7, height: 7, borderRadius: 4, backgroundColor: '#1f2937' },
+  waitingMiniDotC: { position: 'absolute', left: 19, bottom: 9, width: 7, height: 7, borderRadius: 4, backgroundColor: '#1f2937' },
   codeBox: {
-    backgroundColor: Colors.bgPanel, borderRadius: 16, padding: 22,
-    alignItems: 'center', borderWidth: 2, borderColor: Colors.gold,
-    gap: 6, width: '100%', maxWidth: 340,
-    shadowColor: Colors.gold, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.25, shadowRadius: 20, elevation: 8,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderRadius: 22,
+    padding: 18,
+    alignItems: 'center',
+    borderWidth: 4,
+    borderColor: 'rgba(255,255,255,0.7)',
+    gap: 4,
+    width: '100%',
+    maxWidth: 390,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
   },
-  codeBoxLabel: { color: Colors.textMuted, fontSize: 10, letterSpacing: 3, fontWeight: '700' },
-  codeBoxCode: { color: Colors.goldLight, fontSize: 40, fontWeight: '900', letterSpacing: 8 },
-  codeBoxHint: { color: Colors.textSecondary, fontSize: 12, fontStyle: 'italic' },
-  waitingPlayersHeader: { color: Colors.gold, fontSize: 12, letterSpacing: 3, fontWeight: '800', marginTop: 4 },
-  waitingPlayers: { gap: 10, width: '100%', maxWidth: 380 },
+  codeBoxLabel: { color: '#1d4ed8', fontSize: 11, letterSpacing: 3, fontWeight: '900' },
+  codeBoxCode: { color: '#172554', fontSize: 42, lineHeight: 48, fontWeight: '900', letterSpacing: 8 },
+  codeBoxHint: { color: '#64748b', fontSize: 13, fontWeight: '700' },
+  waitingPlayersHeader: { color: '#fff', fontSize: 13, letterSpacing: 3, fontWeight: '900', marginTop: 4, textShadowColor: '#1d4ed8', textShadowOffset: { width: 1, height: 2 }, textShadowRadius: 0 },
+  waitingPlayers: { gap: 10, width: '100%', maxWidth: 420 },
   waitingPlayer: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.bgPanel,
-    borderRadius: 14, padding: 14, gap: 12, borderWidth: 1.5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    borderRadius: 18,
+    padding: 12,
+    gap: 12,
+    borderWidth: 3,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.14,
+    shadowRadius: 8,
   },
-  waitingPlayerColorDot: { width: 10, height: 10, borderRadius: 5 },
-  waitingPlayerToken: { fontSize: 26 },
-  waitingPlayerName: { flex: 1, fontSize: 15, fontWeight: '700' },
-  readyBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  readyText: { fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+  waitingPlayerAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.82)',
+  },
+  waitingPlayerToken: { fontSize: 22 },
+  waitingPlayerName: { flex: 1, fontSize: 16, fontWeight: '900' },
+  readyBadge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
+  readyText: { color: '#fff', fontSize: 10, fontWeight: '900', letterSpacing: 1 },
   waitingPlayerEmpty: {
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.08)', borderStyle: 'dashed',
-    borderRadius: 14, padding: 16, alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.78)',
+    borderStyle: 'dashed',
+    borderRadius: 18,
+    padding: 15,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.25)',
   },
-  waitingEmptyText: { color: Colors.textMuted, fontStyle: 'italic', fontSize: 13 },
+  waitingEmptyText: { color: '#eff6ff', fontSize: 13, fontWeight: '800' },
   startBtn: {
-    backgroundColor: Colors.gold, borderRadius: 14, paddingVertical: 18,
-    alignItems: 'center', overflow: 'hidden', position: 'relative',
-    width: '100%', maxWidth: 380, marginTop: 8,
-    shadowColor: Colors.gold, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.5, shadowRadius: 14, elevation: 8,
+    backgroundColor: '#22c55e',
+    borderRadius: 18,
+    paddingVertical: 17,
+    alignItems: 'center',
+    overflow: 'hidden',
+    position: 'relative',
+    width: '100%',
+    maxWidth: 420,
+    marginTop: 8,
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.82)',
+    shadowColor: '#15803d',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.42,
+    shadowRadius: 0,
   },
-  startBtnDisabled: { opacity: 0.5 },
-  startBtnText: { color: Colors.bgDark, fontWeight: '800', fontSize: 16, letterSpacing: 2 },
+  startBtnDisabled: { backgroundColor: '#facc15', shadowColor: '#ca8a04', opacity: 0.82 },
+  startBtnText: { color: '#fff', fontWeight: '900', fontSize: 17, letterSpacing: 1, textShadowColor: 'rgba(0,0,0,0.24)', textShadowOffset: { width: 1, height: 2 }, textShadowRadius: 0 },
   waitingHintBox: {
-    backgroundColor: 'rgba(124,58,237,0.12)', borderRadius: 12, padding: 14, marginTop: 8,
-    borderWidth: 1, borderColor: 'rgba(124,58,237,0.3)',
+    backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 18, padding: 14, marginTop: 8,
+    borderWidth: 3, borderColor: 'rgba(255,255,255,0.72)', width: '100%', maxWidth: 420,
   },
-  waitingHint: { color: Colors.electricLight, fontStyle: 'italic', fontSize: 14, textAlign: 'center' },
+  waitingHint: { color: '#1d4ed8', fontSize: 14, fontWeight: '900', textAlign: 'center' },
 
   // Card modal
-  cardModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.88)', alignItems: 'center', justifyContent: 'center', padding: 20 },
-  cardModal: {
-    borderRadius: 20, padding: 30, alignItems: 'center', maxWidth: 380, width: '90%',
-    backgroundColor: '#fffbeb', borderWidth: 3,
+  cardModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.62)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 30,
+    overflow: 'hidden',
   },
-  cardModalIcon: { fontSize: 54 },
-  cardModalTitle: { fontSize: 18, fontWeight: '900', letterSpacing: 3, marginTop: 10 },
-  cardModalDivider: { width: 70, height: 3, marginVertical: 14, borderRadius: 2 },
-  cardModalText: { fontSize: 16, color: '#1c1917', textAlign: 'center', lineHeight: 26, fontWeight: '500' },
+  cardModalBackdropBoard: {
+    position: 'absolute',
+    left: '-12%',
+    right: '-12%',
+    bottom: '-10%',
+    height: '58%',
+    borderRadius: 34,
+    backgroundColor: 'rgba(246,230,161,0.34)',
+    borderWidth: 9,
+    borderColor: 'rgba(255,247,237,0.36)',
+    transform: [{ perspective: 900 }, { rotateX: '54deg' }, { rotateZ: '-11deg' }],
+  },
+  cardModalSparkles: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+  },
+  cardModalSparkle: {
+    position: 'absolute',
+    color: '#fff7ad',
+    fontSize: 28,
+    textShadowColor: '#fef08a',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 12,
+  },
+  cardModalSparkleA: { top: '30%', left: '18%' },
+  cardModalSparkleB: { top: '43%', right: '16%', fontSize: 34 },
+  cardModalSparkleC: { bottom: '24%', left: '48%', fontSize: 24 },
+  cardRibbon: {
+    position: 'absolute',
+    top: 72,
+    width: 360,
+    maxWidth: '86%',
+    height: 110,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 4,
+  },
+  cardRibbonMain: {
+    minWidth: 220,
+    height: 66,
+    borderRadius: 8,
+    backgroundColor: '#ef2b19',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.25)',
+    shadowColor: '#991b1b',
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    transform: [{ rotate: '-2deg' }],
+  },
+  cardRibbonWingLeft: {
+    position: 'absolute',
+    left: 8,
+    top: 54,
+    width: 98,
+    height: 38,
+    borderRadius: 5,
+    backgroundColor: '#b91c1c',
+    transform: [{ rotate: '-13deg' }],
+  },
+  cardRibbonWingRight: {
+    position: 'absolute',
+    right: 8,
+    top: 54,
+    width: 98,
+    height: 38,
+    borderRadius: 5,
+    backgroundColor: '#b91c1c',
+    transform: [{ rotate: '13deg' }],
+  },
+  cardRibbonText: {
+    color: '#fff',
+    fontSize: 42,
+    fontWeight: '900',
+    letterSpacing: 1,
+    textShadowColor: '#7f1d1d',
+    textShadowOffset: { width: 3, height: 3 },
+    textShadowRadius: 0,
+  },
+  cardModal: {
+    marginTop: 80,
+    borderRadius: 16,
+    maxWidth: 720,
+    width: '92%',
+    minHeight: 260,
+    backgroundColor: '#fffaf0',
+    borderWidth: 4,
+    overflow: 'hidden',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.85,
+    shadowRadius: 28,
+    elevation: 26,
+    zIndex: 3,
+  },
+  cardModalGlow: {
+    position: 'absolute',
+    left: -18,
+    right: -18,
+    top: -18,
+    bottom: -18,
+  },
+  cardModalHeader: {
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(120,53,15,0.14)',
+  },
+  cardModalTitle: {
+    fontSize: 19,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+  },
+  cardModalBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 24,
+    backgroundColor: 'rgba(255,255,255,0.86)',
+  },
+  cardMascot: {
+    width: 160,
+    height: 150,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(120,53,15,0.18)',
+  },
+  cardMascotHat: { fontSize: 56, marginBottom: -4 },
+  cardMascotFace: { fontSize: 54 },
+  cardModalCopy: {
+    flex: 1,
+    alignItems: 'flex-start',
+  },
+  cardActionLabel: {
+    fontSize: 30,
+    lineHeight: 34,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  cardActionAmount: {
+    fontSize: 42,
+    lineHeight: 48,
+    fontWeight: '900',
+    textShadowColor: 'rgba(0,0,0,0.14)',
+    textShadowOffset: { width: 1, height: 2 },
+    textShadowRadius: 0,
+  },
+  cardModalText: {
+    marginTop: 10,
+    fontSize: 18,
+    color: '#1c1917',
+    lineHeight: 26,
+    fontWeight: '800',
+  },
+  cardModalPlayer: {
+    marginTop: 14,
+    color: '#6b7280',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  cardModalClose: {
+    marginTop: 18,
+    minWidth: 122,
+    borderRadius: 18,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: 'rgba(7,5,16,0.86)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    zIndex: 5,
+  },
+  cardModalCloseText: {
+    color: '#fff7ed',
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
 
   // Confirmation modal
   confirmOverlay: {

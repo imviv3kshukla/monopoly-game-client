@@ -1,7 +1,7 @@
 // components/Board.tsx — 10x10 game board with smooth pawn movement
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Dimensions, Easing } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated, Dimensions, Easing, PanResponder } from 'react-native';
 import { getGridPos, getSide, BoardSpace } from '../constants/board';
 import { Colors, CITY_PHOTOS, TILE_ICONS } from '../constants/theme';
 import { Player, Property } from '../store/gameStore';
@@ -10,8 +10,9 @@ const { width: screenW } = Dimensions.get('window');
 const BOARD_SIZE = Math.min(screenW - 16, 720);
 const CORNER = BOARD_SIZE * 0.13;
 const SIDE = (BOARD_SIZE - CORNER * 2) / 8; // 8 non-corner tiles per side
-const TOKEN_WIDTH = 15;
-const TOKEN_HEIGHT = 20;
+const TOKEN_WIDTH = 26;
+const TOKEN_HEIGHT = 36;
+const MAX_MANUAL_PAN = BOARD_SIZE * 0.24;
 
 interface Props {
   spaces: BoardSpace[];
@@ -20,9 +21,20 @@ interface Props {
   onTilePress: (space: BoardSpace) => void;
   onMoveComplete?: (playerId: string) => void;
   rolling?: boolean;
+  focusedPlayerId?: string | null;
+  cinematicCamera?: boolean;
 }
 
-export function Board({ spaces, players, properties, onTilePress, onMoveComplete, rolling }: Props) {
+export function Board({
+  spaces,
+  players,
+  properties,
+  onTilePress,
+  onMoveComplete,
+  rolling,
+  focusedPlayerId,
+  cinematicCamera,
+}: Props) {
   const [displayPositions, setDisplayPositions] = useState<Record<string, number>>(() => {
     const init: Record<string, number> = {};
     players.forEach(p => { init[p.id] = p.position; });
@@ -32,10 +44,53 @@ export function Board({ spaces, players, properties, onTilePress, onMoveComplete
   const prevPositionsRef = useRef<Record<string, number>>({});
   const onMoveCompleteRef = useRef(onMoveComplete);
   const isMountedRef = useRef(true);
+  const cameraPan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const cameraScale = useRef(new Animated.Value(1)).current;
+  const userPan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const userPanRef = useRef({ x: 0, y: 0 });
+  const [movingPlayerId, setMovingPlayerId] = useState<string | null>(null);
   // Holds moves received while dice are still rolling; flushed when rolling stops
   const pendingMovesRef = useRef<{ playerId: string; from: number; to: number }[]>([]);
   const totalTiles = spaces.length;
   const tokenSlots = buildTokenSlots(players, displayPositions);
+  const cameraPlayerId = movingPlayerId ?? focusedPlayerId;
+  const focusedPosition = cameraPlayerId
+    ? displayPositions[cameraPlayerId] ?? players.find(p => p.id === cameraPlayerId)?.position
+    : undefined;
+  const panResponder = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => false,
+    onMoveShouldSetPanResponder: (_, gesture) => {
+      if (!cinematicCamera) return false;
+      return Math.abs(gesture.dx) > 2 || Math.abs(gesture.dy) > 2;
+    },
+    onPanResponderGrant: () => {
+      userPan.stopAnimation((value) => {
+        userPanRef.current = clampManualPan(value);
+      });
+    },
+    onPanResponderMove: (_, gesture) => {
+      userPan.setValue(clampManualPan({
+        x: userPanRef.current.x + gesture.dx,
+        y: userPanRef.current.y + gesture.dy,
+      }));
+    },
+    onPanResponderRelease: (_, gesture) => {
+      const next = clampManualPan({
+        x: userPanRef.current.x + gesture.dx,
+        y: userPanRef.current.y + gesture.dy,
+      });
+      userPanRef.current = next;
+      userPan.setValue(next);
+    },
+    onPanResponderTerminate: (_, gesture) => {
+      const next = clampManualPan({
+        x: userPanRef.current.x + gesture.dx,
+        y: userPanRef.current.y + gesture.dy,
+      });
+      userPanRef.current = next;
+      userPan.setValue(next);
+    },
+  })).current;
 
   useEffect(() => { onMoveCompleteRef.current = onMoveComplete; }, [onMoveComplete]);
   useEffect(() => () => { isMountedRef.current = false; }, []);
@@ -43,10 +98,12 @@ export function Board({ spaces, players, properties, onTilePress, onMoveComplete
   const startAnimation = useCallback((playerId: string, from: number, to: number) => {
     if (totalTiles <= 0) return;
     const forwardSteps = (to - from + totalTiles) % totalTiles;
+    setMovingPlayerId(playerId);
 
     if (forwardSteps === 0 || forwardSteps > 12) {
       setDisplayPositions(dp => ({ ...dp, [playerId]: to }));
       setTimeout(() => {
+        if (isMountedRef.current) setMovingPlayerId(null);
         if (isMountedRef.current) onMoveCompleteRef.current?.(playerId);
       }, 150);
       return;
@@ -62,7 +119,11 @@ export function Board({ spaces, players, properties, onTilePress, onMoveComplete
     let idx = 0;
     const tick = () => {
       if (!isMountedRef.current) return;
-      if (idx >= steps.length) { onMoveCompleteRef.current?.(playerId); return; }
+      if (idx >= steps.length) {
+        setMovingPlayerId(null);
+        onMoveCompleteRef.current?.(playerId);
+        return;
+      }
       setDisplayPositions(dp => ({ ...dp, [playerId]: steps[idx] }));
       idx++;
       setTimeout(tick, 430);
@@ -110,10 +171,66 @@ export function Board({ spaces, players, properties, onTilePress, onMoveComplete
     return () => clearTimeout(t);
   }, [rolling, startAnimation]);
 
+  useEffect(() => {
+    if (!cinematicCamera || focusedPosition === undefined || totalTiles <= 0) {
+      Animated.parallel([
+        Animated.spring(cameraPan, {
+          toValue: { x: 0, y: 0 },
+          friction: 9,
+          tension: 60,
+          useNativeDriver: true,
+        }),
+        Animated.spring(cameraScale, {
+          toValue: 1,
+          friction: 9,
+          tension: 60,
+          useNativeDriver: true,
+        }),
+      ]).start();
+      return;
+    }
+
+    const center = getTileCenter(focusedPosition);
+    const panStrength = movingPlayerId ? 0.36 : rolling ? 0.1 : 0.24;
+    const targetPan = {
+      x: (BOARD_SIZE / 2 - center.x) * panStrength,
+      y: (BOARD_SIZE / 2 - center.y) * panStrength,
+    };
+    Animated.parallel([
+      Animated.spring(cameraPan, {
+        toValue: targetPan,
+        friction: 8,
+        tension: 70,
+        useNativeDriver: true,
+      }),
+      Animated.spring(cameraScale, {
+        toValue: movingPlayerId ? 1.26 : rolling ? 1.03 : 1.12,
+        friction: 8,
+        tension: 70,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [cinematicCamera, focusedPosition, movingPlayerId, rolling, totalTiles, cameraPan, cameraScale]);
+
   return (
-    <View style={[styles.boardOuter, { width: BOARD_SIZE + 12, height: BOARD_SIZE + 12 }]}>
-      <View style={[styles.boardWrapper, { width: BOARD_SIZE + 6, height: BOARD_SIZE + 6 }]}>
-        <View style={[styles.board, { width: BOARD_SIZE, height: BOARD_SIZE }]}>
+    <View
+      style={[styles.boardOuter, { width: BOARD_SIZE + 12, height: BOARD_SIZE + 12 }]}
+      {...(cinematicCamera ? panResponder.panHandlers : {})}
+    >
+      <Animated.View
+        style={[
+          styles.boardCamera,
+          {
+            transform: [
+              { translateX: Animated.add(cameraPan.x, userPan.x) },
+              { translateY: Animated.add(cameraPan.y, userPan.y) },
+              { scale: cameraScale },
+            ],
+          },
+        ]}
+      >
+        <View style={[styles.boardWrapper, { width: BOARD_SIZE + 6, height: BOARD_SIZE + 6 }]}>
+          <View style={[styles.board, { width: BOARD_SIZE, height: BOARD_SIZE }]}>
           {spaces.map(sp => (
             <Tile
               key={sp.id}
@@ -131,11 +248,13 @@ export function Board({ spaces, players, properties, onTilePress, onMoveComplete
                 player={player}
                 position={displayPositions[player.id] ?? player.position}
                 slot={tokenSlots[player.id] ?? 0}
+                isMoving={movingPlayerId === player.id}
               />
             ))}
           </View>
+          </View>
         </View>
-      </View>
+      </Animated.View>
     </View>
   );
 }
@@ -231,12 +350,24 @@ function CornerContent({ space }: { space: BoardSpace }) {
 
 // ─── Smooth pawn overlay ──────────────────────────────────────────────────────
 
-function SmoothPawnToken({ player, position, slot }: { player: Player; position: number; slot: number }) {
+function SmoothPawnToken({
+  player,
+  position,
+  slot,
+  isMoving,
+}: {
+  player: Player;
+  position: number;
+  slot: number;
+  isMoving?: boolean;
+}) {
   const target = getPawnTarget(position, slot);
   const xy = useRef(new Animated.ValueXY(target)).current;
   const scale = useRef(new Animated.Value(0)).current;
   const hopY = useRef(new Animated.Value(0)).current;
+  const activeLift = useRef(new Animated.Value(0)).current;
   const firstMoveRef = useRef(true);
+  const initials = getPlayerInitials(player.name);
 
   useEffect(() => {
     Animated.spring(scale, {
@@ -246,6 +377,15 @@ function SmoothPawnToken({ player, position, slot }: { player: Player; position:
       useNativeDriver: true,
     }).start();
   }, []);
+
+  useEffect(() => {
+    Animated.spring(activeLift, {
+      toValue: isMoving ? 1 : 0,
+      friction: 6,
+      tension: 90,
+      useNativeDriver: true,
+    }).start();
+  }, [isMoving, activeLift]);
 
   useEffect(() => {
     if (firstMoveRef.current) {
@@ -268,6 +408,15 @@ function SmoothPawnToken({ player, position, slot }: { player: Player; position:
     ]).start();
   }, [target.x, target.y]);
 
+  const activeScale = activeLift.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 1.28],
+  });
+  const activeRise = activeLift.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -10],
+  });
+
   return (
     <Animated.View
       style={[
@@ -275,23 +424,25 @@ function SmoothPawnToken({ player, position, slot }: { player: Player; position:
         {
           left: xy.x,
           top: xy.y,
-          transform: [{ translateY: hopY }, { scale }],
+          transform: [{ translateY: hopY }, { translateY: activeRise }, { scale }, { scale: activeScale }],
           shadowColor: player.color,
         },
       ]}
     >
-      <View style={[styles.pawnCrown, { backgroundColor: player.color }]}>
-        <View style={styles.pawnCrownShine} />
-      </View>
-      <View style={[styles.pawnHead, { backgroundColor: player.color }]}>
-        <View style={styles.pawnSpecular} />
-        <View style={styles.pawnInnerGlow} />
-      </View>
-      <View style={[styles.pawnNeck, { backgroundColor: player.color }]} />
-      <View style={[styles.pawnBody, { backgroundColor: player.color }]} />
-      <View style={[styles.pawnBase, { backgroundColor: player.color }]} />
       <View style={[styles.pawnHalo, { backgroundColor: player.color }]} />
       <View style={styles.pawnFootShadow} />
+      <View style={styles.avatarStem} />
+      <View style={[styles.avatarMarker, { borderColor: player.color }]}>
+        <View style={styles.avatarGoldRing}>
+          <View style={[styles.avatarFace, { backgroundColor: player.color }]}>
+            <View style={styles.avatarFaceShine} />
+            <Text style={styles.avatarInitials} numberOfLines={1}>
+              {player.token || initials}
+            </Text>
+          </View>
+        </View>
+      </View>
+      <View style={styles.avatarBase} />
     </Animated.View>
   );
 }
@@ -384,12 +535,25 @@ function getPawnTarget(position: number, slot: number): { x: number; y: number }
 
 function getPawnOffset(slot: number): { x: number; y: number } {
   const offsets = [
-    { x: -7, y: -6 },
-    { x: 7, y: -6 },
-    { x: -7, y: 7 },
-    { x: 7, y: 7 },
+    { x: -11, y: -10 },
+    { x: 11, y: -10 },
+    { x: -11, y: 11 },
+    { x: 11, y: 11 },
   ];
   return offsets[slot % offsets.length];
+}
+
+function clampManualPan(value: { x: number; y: number }): { x: number; y: number } {
+  return {
+    x: Math.max(-MAX_MANUAL_PAN, Math.min(MAX_MANUAL_PAN, value.x)),
+    y: Math.max(-MAX_MANUAL_PAN, Math.min(MAX_MANUAL_PAN, value.y)),
+  };
+}
+
+function getPlayerInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  return parts.slice(0, 2).map(part => part[0]?.toUpperCase()).join('');
 }
 
 function buildTokenSlots(players: Player[], displayPositions: Record<string, number>): Record<string, number> {
@@ -408,10 +572,19 @@ function buildTokenSlots(players: Player[], displayPositions: Record<string, num
 const styles = StyleSheet.create({
   boardOuter: {
     alignSelf: 'center', borderRadius: 8, padding: 3,
-    backgroundColor: '#160a00',
+    backgroundColor: 'transparent',
     shadowColor: '#000',
     shadowOffset: { width: 4, height: 18 },
     shadowOpacity: 0.8, shadowRadius: 24, elevation: 22,
+    userSelect: 'none' as any,
+    cursor: 'grab' as any,
+  },
+  boardCamera: {
+    width: BOARD_SIZE + 6,
+    height: BOARD_SIZE + 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    userSelect: 'none' as any,
   },
   boardWrapper: {
     borderRadius: 5, padding: 3,
@@ -420,7 +593,12 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.5, shadowRadius: 10, elevation: 8,
   },
-  board: { backgroundColor: Colors.cream, position: 'relative', alignSelf: 'center' },
+  board: {
+    backgroundColor: Colors.cream,
+    position: 'relative',
+    alignSelf: 'center',
+    userSelect: 'none' as any,
+  },
   tokenLayer: {
     position: 'absolute',
     left: 0,
@@ -462,119 +640,118 @@ const styles = StyleSheet.create({
   cornerLine1: { fontSize: 8, fontWeight: '900', color: '#1c1917' },
   cornerLine2: { fontSize: 7, color: Colors.gold, fontWeight: '700', marginTop: 1 },
 
-  // Smooth chess pawn token
+  // Smooth avatar marker token
   smoothPawn: {
     position: 'absolute',
     width: TOKEN_WIDTH,
     height: TOKEN_HEIGHT,
     alignItems: 'center',
+    justifyContent: 'flex-start',
     zIndex: 80,
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.75,
-    shadowRadius: 7,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.78,
+    shadowRadius: 10,
     elevation: 14,
   },
   pawnHalo: {
     position: 'absolute',
-    bottom: -1,
-    width: 17,
-    height: 6,
-    borderRadius: 10,
-    opacity: 0.14,
-  },
-  pawnCrown: {
-    width: 6,
-    height: 3,
-    borderTopLeftRadius: 5,
-    borderTopRightRadius: 5,
-    borderBottomLeftRadius: 3,
-    borderBottomRightRadius: 3,
-    marginBottom: -1,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.38)',
-    overflow: 'hidden',
-    zIndex: 2,
-  },
-  pawnCrownShine: {
-    position: 'absolute',
-    top: 0,
-    left: 1,
-    right: 1,
-    height: 2,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.42)',
-  },
-  pawnHead: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.62)',
-    borderLeftColor: 'rgba(255,255,255,0.42)',
-    borderRightColor: 'rgba(0,0,0,0.2)',
-    borderBottomColor: 'rgba(0,0,0,0.35)',
-    zIndex: 2,
-  },
-  pawnSpecular: {
-    position: 'absolute',
-    top: 2,
-    left: 2,
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: 'rgba(255,255,255,0.82)',
-  },
-  pawnInnerGlow: {
-    position: 'absolute',
-    left: 3,
-    right: 3,
-    bottom: 2,
-    height: 4,
-    borderRadius: 5,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-  },
-  pawnNeck: {
-    width: 5,
-    height: 3,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: 'rgba(0,0,0,0.22)',
-    marginTop: -1,
-  },
-  pawnBody: {
-    width: 12,
-    height: 6,
-    borderTopLeftRadius: 9,
-    borderTopRightRadius: 9,
-    borderBottomLeftRadius: 6,
-    borderBottomRightRadius: 6,
-    borderTopWidth: 1.5,
-    borderTopColor: 'rgba(255,255,255,0.5)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.35)',
-    borderLeftWidth: 1,
-    borderLeftColor: 'rgba(255,255,255,0.22)',
-    borderRightWidth: 1,
-    borderRightColor: 'rgba(0,0,0,0.2)',
-  },
-  pawnBase: {
-    width: 15,
-    height: 4,
-    borderRadius: 6,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.38)',
-    borderBottomWidth: 2,
-    borderBottomColor: 'rgba(0,0,0,0.5)',
+    bottom: 0,
+    width: 27,
+    height: 9,
+    borderRadius: 14,
+    opacity: 0.16,
   },
   pawnFootShadow: {
     position: 'absolute',
-    bottom: -2,
-    width: 15,
-    height: 3,
-    borderRadius: 10,
-    backgroundColor: 'rgba(0,0,0,0.22)',
+    bottom: -1,
+    width: 24,
+    height: 7,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.34)',
     zIndex: -1,
+  },
+  avatarMarker: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 2,
+    backgroundColor: '#facc15',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 8,
+  },
+  avatarGoldRing: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#fde68a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderTopColor: '#fff7ed',
+    borderLeftColor: '#fff7ed',
+    borderRightColor: '#b45309',
+    borderBottomColor: '#92400e',
+  },
+  avatarFace: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.65)',
+    borderLeftColor: 'rgba(255,255,255,0.45)',
+    borderRightColor: 'rgba(0,0,0,0.25)',
+    borderBottomColor: 'rgba(0,0,0,0.42)',
+  },
+  avatarFaceShine: {
+    position: 'absolute',
+    top: 1,
+    left: 2,
+    width: 8,
+    height: 5,
+    borderRadius: 5,
+    backgroundColor: 'rgba(255,255,255,0.34)',
+  },
+  avatarInitials: {
+    color: '#fff',
+    fontSize: 12,
+    lineHeight: 14,
+    fontWeight: '900',
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 1,
+  },
+  avatarStem: {
+    width: 5,
+    height: 8,
+    marginTop: -1,
+    marginBottom: -1,
+    borderRadius: 3,
+    backgroundColor: '#f59e0b',
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: 'rgba(0,0,0,0.25)',
+    zIndex: 2,
+  },
+  avatarBase: {
+    width: 18,
+    height: 5,
+    borderRadius: 9,
+    marginTop: -2,
+    backgroundColor: '#fbbf24',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.45)',
+    borderBottomWidth: 2,
+    borderBottomColor: 'rgba(0,0,0,0.38)',
+    zIndex: 1,
   },
 
   // Center panel
