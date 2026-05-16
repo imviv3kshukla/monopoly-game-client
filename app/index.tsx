@@ -20,6 +20,7 @@ import { connectToRoom } from '../services/socket';
 import { API_BASE_URL } from '../services/config';
 
 type LobbyMode = 'computer' | 'pass' | 'online' | 'friends';
+type BotType = 'QUICK' | 'SMART';
 
 const MODE_CONFIG: Record<LobbyMode, {
   top: string;
@@ -29,7 +30,7 @@ const MODE_CONFIG: Record<LobbyMode, {
   shadow: string;
   action: 'create' | 'join' | 'soon';
 }> = {
-  computer: { top: 'V/S', bottom: 'COMPUTER', icon: '💻', accent: '#e879f9', shadow: '#a21caf', action: 'soon' },
+  computer: { top: 'V/S', bottom: 'COMPUTER', icon: '💻', accent: '#e879f9', shadow: '#a21caf', action: 'create' },
   pass: { top: 'PASS', bottom: 'DEVICE', icon: '🎮', accent: '#22c55e', shadow: '#15803d', action: 'create' },
   online: { top: 'ONLINE', bottom: 'MULTIPLAYER', icon: '🌐', accent: '#38bdf8', shadow: '#0369a1', action: 'create' },
   friends: { top: 'PLAY WITH', bottom: 'FRIENDS', icon: '👥', accent: '#facc15', shadow: '#ea580c', action: 'join' },
@@ -39,6 +40,7 @@ export default function LobbyScreen() {
   const [name, setName] = useState('');
   const [roomCode, setRoomCode] = useState('');
   const [selectedMode, setSelectedMode] = useState<LobbyMode>('online');
+  const [selectedBotType, setSelectedBotType] = useState<BotType>('QUICK');
   const [loading, setLoading] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
   const { width, height } = useWindowDimensions();
@@ -102,7 +104,8 @@ export default function LobbyScreen() {
       setSession(data.playerId, data.roomId);
       setGameState(data.state);
       connectToRoom(data.roomId, data.playerId);
-      router.push(`/game/${data.roomId}`);
+      const botQuery = selectedMode === 'computer' ? `?addBot=${selectedBotType}` : '';
+      router.push(`/game/${data.roomId}${botQuery}`);
     } catch {
       Alert.alert('Connection failed', 'Could not reach the server.');
     }
@@ -271,6 +274,29 @@ export default function LobbyScreen() {
               />
             )}
 
+            {selectedMode === 'computer' && (
+              <View style={styles.botToggle}>
+                {(['QUICK', 'SMART'] as BotType[]).map(type => {
+                  const active = selectedBotType === type;
+                  return (
+                    <TouchableOpacity
+                      key={type}
+                      style={[styles.botOption, active && styles.botOptionActive]}
+                      onPress={() => setSelectedBotType(type)}
+                      activeOpacity={0.88}
+                    >
+                      <Text style={[styles.botOptionIcon, active && styles.botOptionIconActive]}>
+                        {type === 'SMART' ? '🧠' : '🤖'}
+                      </Text>
+                      <Text style={[styles.botOptionText, active && styles.botOptionTextActive]}>
+                        {type === 'SMART' ? 'SMART AI' : 'QUICK BOT'}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+
             <TouchableOpacity
               style={[
                 styles.primaryButton,
@@ -288,8 +314,8 @@ export default function LobbyScreen() {
                 <Text style={styles.primaryButtonText}>
                   {selected.action === 'join'
                     ? 'JOIN ROOM'
-                    : selected.action === 'soon'
-                      ? 'COMING SOON'
+                    : selectedMode === 'computer'
+                      ? `PLAY VS ${selectedBotType === 'SMART' ? 'AI' : 'BOT'}`
                       : 'CREATE ROOM'}
                 </Text>
               )}
@@ -704,6 +730,43 @@ const styles = StyleSheet.create({
     backgroundColor: '#dbeafe',
     borderWidth: 2,
     borderColor: '#bfdbfe',
+  },
+  botToggle: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  botOption: {
+    flex: 1,
+    minHeight: 58,
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#dbeafe',
+    borderWidth: 2,
+    borderColor: '#bfdbfe',
+  },
+  botOptionActive: {
+    backgroundColor: '#fdf2f8',
+    borderColor: '#e879f9',
+  },
+  botOptionIcon: {
+    fontSize: 21,
+    opacity: 0.8,
+  },
+  botOptionIconActive: {
+    opacity: 1,
+  },
+  botOptionText: {
+    marginTop: 2,
+    color: '#1d4ed8',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  botOptionTextActive: {
+    color: '#a21caf',
   },
   primaryButton: {
     height: 58,

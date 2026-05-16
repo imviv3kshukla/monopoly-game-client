@@ -32,7 +32,9 @@ export interface Player {
   inJail: boolean;
   jailTurns: number;
   bankrupt: boolean;
-  doublesCount: number;
+  doublesCount?: number;
+  bot?: boolean;
+  botType?: 'QUICK' | 'SMART';
 }
 
 export interface Property {

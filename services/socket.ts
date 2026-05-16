@@ -6,6 +6,7 @@ import { useGameStore } from '../store/gameStore';
 import { API_BASE_URL, WS_URL } from './config';
 
 let client: Client | null = null;
+const pendingMessages: Array<{ destination: string; body: object }> = [];
 
 export function connectToRoom(roomId: string, playerId: string) {
   if (client?.active) client.deactivate();
@@ -23,6 +24,11 @@ export function connectToRoom(roomId: string, playerId: string) {
         // Push new state into our Zustand store → UI re-renders automatically
         useGameStore.getState().setGameState(gameState);
       });
+
+      while (pendingMessages.length) {
+        const next = pendingMessages.shift();
+        if (next) publish(next.destination, next.body);
+      }
     },
 
     onDisconnect: () => console.log('❌ Disconnected'),
@@ -64,9 +70,21 @@ export function sendPayJail(roomId: string, playerId: string) {
   send(`/app/room.${roomId}.payJail`, { playerId });
 }
 
+export function sendAddBot(roomId: string, playerId: string, botType: 'QUICK' | 'SMART') {
+  send(`/app/room.${roomId}.addBot`, { playerId, botType });
+}
+
 function send(destination: string, body: object) {
-  if (!client?.active) {
-    console.error('Not connected!');
+  if (!client?.connected) {
+    pendingMessages.push({ destination, body });
+    return;
+  }
+  publish(destination, body);
+}
+
+function publish(destination: string, body: object) {
+  if (!client?.connected) {
+    pendingMessages.push({ destination, body });
     return;
   }
   client.publish({

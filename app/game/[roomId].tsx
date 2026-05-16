@@ -10,7 +10,7 @@ import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { useGameStore } from '../../store/gameStore';
 import {
   connectToRoom, sendRoll, sendBuy, sendSkipBuy, sendBuildHouse,
-  sendEndTurn, sendPayJail, sendStartGame, sendEndGame,
+  sendEndTurn, sendPayJail, sendStartGame, sendEndGame, sendAddBot,
 } from '../../services/socket';
 import { API_BASE_URL } from '../../services/config';
 import { Board } from '../../components/Board';
@@ -29,7 +29,7 @@ type CardReveal = {
 };
 
 export default function GameScreen() {
-  const { roomId } = useLocalSearchParams<{ roomId: string }>();
+  const { roomId, addBot } = useLocalSearchParams<{ roomId: string; addBot?: string }>();
   const { gameState, myPlayerId, isMyTurn, currentPlayer, myPlayer, boardSpaces, setBoardSpaces } = useGameStore();
   const [selectedSpace, setSelectedSpace] = useState<BoardSpace | null>(null);
   const [rolling, setRolling] = useState(false);
@@ -90,6 +90,7 @@ export default function GameScreen() {
   }, [gameState?.currentPlayerIndex]);
 
   const lastShownCardRef = useRef<string | null>(null);
+  const autoBotRequestedRef = useRef(false);
 
   // Show chance/community card popup when a drawn card appears in the server log.
   useEffect(() => {
@@ -125,6 +126,16 @@ export default function GameScreen() {
       });
     return () => { cancelled = true; };
   }, [boardSpaces.length, setBoardSpaces]);
+
+  useEffect(() => {
+    if (!gameState || gameState.status !== 'WAITING' || !roomId || !myPlayerId) return;
+    if (autoBotRequestedRef.current) return;
+    const requestedBotType = addBot === 'SMART' ? 'SMART' : addBot === 'QUICK' ? 'QUICK' : null;
+    if (!requestedBotType) return;
+    if (gameState.players.some(player => player.bot)) return;
+    autoBotRequestedRef.current = true;
+    sendAddBot(roomId, myPlayerId, requestedBotType);
+  }, [addBot, gameState?.status, gameState?.players.length, myPlayerId, roomId]);
 
   // ── scheduleAutoEnd: clears any existing timer, starts a 2.5s countdown to sendEndTurn
   const scheduleAutoEnd = useCallback(() => {
@@ -792,6 +803,7 @@ function LoadingScreen() {
 function WaitingRoom({ roomId, state, myPlayerId }: any) {
   const isHost = state.players[0]?.id === myPlayerId;
   const canStart = state.players.length >= 2;
+  const canAddBot = isHost && state.players.length < 4;
   const dotAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -846,8 +858,8 @@ function WaitingRoom({ roomId, state, myPlayerId }: any) {
               <Text style={[styles.waitingPlayerName, { color: p.color }]}>
                 {p.name}{p.id === myPlayerId && '  (You)'}{i === 0 && '  👑'}
               </Text>
-              <View style={[styles.readyBadge, { backgroundColor: p.color }]}>
-                <Text style={styles.readyText}>READY</Text>
+              <View style={[styles.readyBadge, { backgroundColor: p.bot ? '#0f172a' : p.color }]}>
+                <Text style={styles.readyText}>{p.bot ? (p.botType === 'SMART' ? 'SMART AI' : 'BOT') : 'READY'}</Text>
               </View>
             </View>
           ))}
@@ -857,6 +869,27 @@ function WaitingRoom({ roomId, state, myPlayerId }: any) {
             </Animated.View>
           ))}
         </View>
+
+        {canAddBot && (
+          <View style={styles.botAddPanel}>
+            <TouchableOpacity
+              style={[styles.botAddButton, styles.botAddQuick]}
+              onPress={() => sendAddBot(roomId, myPlayerId, 'QUICK')}
+              activeOpacity={0.86}
+            >
+              <Text style={styles.botAddIcon}>🤖</Text>
+              <Text style={styles.botAddText}>ADD QUICK BOT</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.botAddButton, styles.botAddSmart]}
+              onPress={() => sendAddBot(roomId, myPlayerId, 'SMART')}
+              activeOpacity={0.86}
+            >
+              <Text style={styles.botAddIcon}>🧠</Text>
+              <Text style={styles.botAddText}>ADD SMART AI</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {isHost ? (
           <TouchableOpacity
@@ -2198,6 +2231,45 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.25)',
   },
   waitingEmptyText: { color: '#eff6ff', fontSize: 13, fontWeight: '800' },
+  botAddPanel: {
+    width: '100%',
+    maxWidth: 420,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  botAddButton: {
+    flex: 1,
+    minHeight: 58,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.82)',
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.28,
+    shadowRadius: 0,
+  },
+  botAddQuick: {
+    backgroundColor: '#38bdf8',
+    shadowColor: '#0369a1',
+  },
+  botAddSmart: {
+    backgroundColor: '#e879f9',
+    shadowColor: '#a21caf',
+  },
+  botAddIcon: {
+    fontSize: 22,
+    marginBottom: 2,
+  },
+  botAddText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    textShadowColor: 'rgba(0,0,0,0.22)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 0,
+  },
   startBtn: {
     backgroundColor: '#22c55e',
     borderRadius: 18,
